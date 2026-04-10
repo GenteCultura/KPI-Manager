@@ -1,0 +1,217 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: id, name, email, diretoriaId, departmentId, gerenciaId, servicoId, teamId, role, accessLevel, status, permissions, hireDate, photoUrl
+    //
+    // Collection: kpis
+    // Fields: id, code, name, department, description, unit, polarity, frequency, ownerId, target, actual, status
+    //
+    // Collection: consolidations
+    // Fields: id, collaboratorName, collaboratorId, name, totalTarget, indicators, diretoriaId, departmentId, teamId, createdAt, month, isOnVacation, vacationStart, vacationEnd
+    //
+    // Collection: audit_logs
+    // Fields: id, target_id, target_name, action, changed_by, changed_by_id, timestamp, changes
+    //
+    // Collection: inventory_indicators
+    // Fields: id, code, name, responsibleId, status
+    //
+    // Collection: data_logs
+    // Fields: id, type, entity, action, file_name, row_count, performed_by, performed_by_id, timestamp, status, details
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        ((request.auth.token.email == "weslleymatheusferreira@gmail.com" && request.auth.token.email_verified == true) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('access_level', '') == 'Admin'));
+    }
+
+    function isVisualizador() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('access_level', '') == 'Visualizador';
+    }
+
+    function isGestor() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('access_level', '') == 'Gestor';
+    }
+
+    function isOwner(field) {
+      return isAuthenticated() && request.auth.uid == resource.data[field];
+    }
+
+    function canDelete() {
+      return isAdmin() || hasPermission('power_user');
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function onlyOwnIndicators() {
+      let userData = getUserData();
+      return isVisualizador() || ('permissions' in userData && 'only_own_indicators' in userData.permissions && userData.permissions.only_own_indicators == true);
+    }
+
+    function hasPermission(permission) {
+      return isAdmin() || (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        'permissions' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+        permission in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions[permission] == true
+      );
+    }
+
+    function isValidUser(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.name is string && data.name.size() > 0 &&
+             data.email is string && data.email.size() > 0 &&
+             data.access_level in ['Admin', 'Gestor', 'Visualizador'] &&
+             data.status in ['Ativo', 'Inativo'];
+    }
+
+    function isValidKPI(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.code is string && data.code.size() > 0 &&
+             data.name is string && data.name.size() > 0 &&
+             data.owner_id is string && data.owner_id.size() > 0 &&
+             data.status in ['Ativo', 'Inativo'];
+    }
+
+    function isValidConsolidation(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.collaborator_id is string && data.collaborator_id.size() > 0 &&
+             data.month is string && data.month.size() > 0;
+    }
+
+    function isValidAuditLog(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.target_id is string && data.target_id.size() > 0 &&
+             data.action in ['CREATE', 'UPDATE', 'DELETE'] &&
+             (data.changed_by_id == request.auth.uid || data.changed_by_id == 'system');
+    }
+
+    function isValidInventoryIndicator(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.code is string && data.code.size() > 0 &&
+             data.name is string && data.name.size() > 0 &&
+             data.type in ['Individual', 'Coletivo'] &&
+             data.responsible_id is string && data.responsible_id.size() > 0 &&
+             data.status in ['Em Planejamento', 'Ativo', 'Concluído', 'Cancelado'];
+    }
+
+    function isValidDataLog(data) {
+      return data.keys().hasOnly(['id', 'type', 'entity', 'action', 'file_name', 'row_count', 'performed_by', 'performed_by_id', 'timestamp', 'status', 'details']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.type in ['IMPORT', 'EXPORT'] &&
+             data.action is string && data.action.size() > 0 && data.action.size() < 200 &&
+             data.performed_by_id is string && data.performed_by_id.size() > 0 && data.performed_by_id.size() < 100 &&
+             data.status in ['SUCCESS', 'ERROR', 'PARTIAL'] &&
+             (!('entity' in data) || (data.entity is string && data.entity.size() < 50)) &&
+             (!('performed_by' in data) || (data.performed_by is string && data.performed_by.size() < 100)) &&
+             (!('timestamp' in data) || (data.timestamp is string && data.timestamp.size() < 50)) &&
+             (!('file_name' in data) || (data.file_name is string && data.file_name.size() < 255)) &&
+             (!('row_count' in data) || (data.row_count is number && data.row_count >= 0)) &&
+             (!('details' in data) || (data.details is string && data.details.size() < 5000));
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidUser(request.resource.data) && request.resource.data.id == userId;
+      allow update: if (isAdmin() && isValidUser(request.resource.data) && request.resource.data.id == userId) ||
+                    (isAuthenticated() && request.auth.uid == userId && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo_url']));
+      allow delete: if canDelete();
+    }
+
+    match /kpis/{kpiId} {
+      allow read: if isAdmin() || (isGestor() && !onlyOwnIndicators()) || isOwner('owner_id');
+      allow create: if hasPermission('can_create_indicators') && isValidKPI(request.resource.data) && request.resource.data.id == kpiId;
+      allow update: if hasPermission('can_edit_results') && (isAdmin() || isGestor() || isOwner('owner_id')) && isValidKPI(request.resource.data) && request.resource.data.id == kpiId;
+      allow delete: if canDelete();
+    }
+
+    match /consolidations/{consolidationId} {
+      allow read: if isAdmin() || (isGestor() && !onlyOwnIndicators()) || isOwner('collaborator_id');
+      allow create: if hasPermission('can_edit_results') && isValidConsolidation(request.resource.data) && request.resource.data.id == consolidationId;
+      allow update: if hasPermission('can_edit_results') && (isAdmin() || isGestor() || isOwner('collaborator_id')) && isValidConsolidation(request.resource.data) && request.resource.data.id == consolidationId;
+      allow delete: if canDelete();
+    }
+
+    match /diretorias/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /departamentos/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /gerencias/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /servicos/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /teams/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /audit_logs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && isValidAuditLog(request.resource.data) && request.resource.data.id == id;
+      allow update, delete: if false;
+    }
+
+    match /inventory_indicators/{id} {
+      allow read: if isAdmin() || (isGestor() && !onlyOwnIndicators()) || isOwner('responsible_id');
+      allow create: if hasPermission('can_create_indicators') && isValidInventoryIndicator(request.resource.data) && request.resource.data.id == id;
+      allow update: if hasPermission('can_edit_results') && (isAdmin() || isGestor() || isOwner('responsible_id')) && isValidInventoryIndicator(request.resource.data) && request.resource.data.id == id;
+      allow delete: if canDelete();
+    }
+
+    match /data_logs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && isValidDataLog(request.resource.data) && request.resource.data.id == id;
+      allow update, delete: if false;
+    }
+
+    match /areas/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /settings/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

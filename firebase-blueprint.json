@@ -1,0 +1,180 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user with access levels and permissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "registrationNumber": { "type": "string" },
+        "diretoriaId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "gerenciaId": { "type": "string" },
+        "servicoId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "department": { "type": "string" },
+        "role": { "type": "string" },
+        "accessLevel": { "type": "string", "enum": ["Admin", "Gestor", "Visualizador"] },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] },
+        "permissions": {
+          "type": "object",
+          "properties": {
+            "canCreateIndicators": { "type": "boolean" },
+            "canEditResults": { "type": "boolean" },
+            "canViewOtherDepartments": { "type": "boolean" },
+            "allowedTeams": { "type": "array", "items": { "type": "string" } },
+            "allowedAreas": { "type": "array", "items": { "type": "string" } },
+            "onlyOwnIndicators": { "type": "boolean" }
+          }
+        },
+        "hireDate": { "type": "string", "format": "date" },
+        "photoUrl": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "accessLevel", "status"]
+    },
+    "KPI": {
+      "title": "KPI",
+      "description": "Key Performance Indicator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "department": { "type": "string" },
+        "description": { "type": "string" },
+        "unit": { "type": "string", "enum": ["Moeda", "Porcentagem", "Número Absoluto"] },
+        "polarity": { "type": "string", "enum": ["Cima", "Baixo", "Igual"] },
+        "frequency": { "type": "string", "enum": ["Mensal", "Semanal", "Diário"] },
+        "ownerId": { "type": "string" },
+        "target": { "type": "number" },
+        "actual": { "type": "number" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"] }
+      },
+      "required": ["id", "code", "name", "ownerId"]
+    },
+    "ConsolidatedIndicator": {
+      "title": "Consolidated Indicator",
+      "description": "Index of performance for a collaborator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "collaboratorName": { "type": "string" },
+        "collaboratorId": { "type": "string" },
+        "name": { "type": "string" },
+        "totalTarget": { "type": "string" },
+        "indicators": { "type": "array" },
+        "diretoriaId": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "teamId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "month": { "type": "string" }
+      }
+    },
+    "Diretoria": {
+      "title": "Diretoria",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "Departamento": {
+      "title": "Departamento",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "diretoriaId": { "type": "string" }
+      }
+    },
+    "Gerencia": {
+      "title": "Gerencia",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "departmentId": { "type": "string" }
+      }
+    },
+    "Servico": {
+      "title": "Servico",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "gerenciaId": { "type": "string" }
+      }
+    },
+    "Team": {
+      "title": "Team",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "servicoId": { "type": "string" }
+      }
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetId": { "type": "string" },
+        "targetName": { "type": "string" },
+        "action": { "type": "string" },
+        "changedBy": { "type": "string" },
+        "changedById": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+    "InventoryIndicator": {
+      "title": "Inventory Indicator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["Individual", "Coletivo"] },
+        "teamId": { "type": "string" },
+        "responsibleId": { "type": "string" },
+        "target": { "type": "string" },
+        "actual": { "type": "number" },
+        "unit": { "type": "string", "enum": ["Moeda", "Porcentagem", "Número Absoluto"] },
+        "status": { "type": "string" }
+      }
+    },
+    "DataLog": {
+      "title": "Data Log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["IMPORT", "EXPORT"] },
+        "entity": { "type": "string" },
+        "action": { "type": "string" },
+        "file_name": { "type": "string" },
+        "row_count": { "type": "number" },
+        "performed_by": { "type": "string" },
+        "performed_by_id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string", "enum": ["SUCCESS", "ERROR", "PARTIAL"] },
+        "details": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users": { "schema": "User", "description": "System users" },
+    "kpis": { "schema": "KPI", "description": "Key Performance Indicators" },
+    "consolidations": { "schema": "ConsolidatedIndicator", "description": "Performance consolidations" },
+    "diretorias": { "schema": "Diretoria", "description": "Organizational level 1" },
+    "departamentos": { "schema": "Departamento", "description": "Organizational level 2" },
+    "gerencias": { "schema": "Gerencia", "description": "Organizational level 3" },
+    "servicos": { "schema": "Servico", "description": "Organizational level 4" },
+    "teams": { "schema": "Team", "description": "Organizational level 5" },
+    "audit_logs": { "schema": "AuditLog", "description": "System audit trail" },
+    "inventory_indicators": { "schema": "InventoryIndicator", "description": "Inventory of indicators" },
+    "data_logs": { "schema": "DataLog", "description": "Import/Export logs" },
+    "areas": { "schema": "object", "description": "Legacy areas" }
+  }
+}
