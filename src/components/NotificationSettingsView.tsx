@@ -78,124 +78,103 @@ export const NotificationSettingsView = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Mail className="h-5 w-5" />
+      <div className="bg-white rounded-2xl border border-slate-200/60 p-8 shadow-sm">
+        <div className="flex items-center gap-4 mb-8">
+          <div className="h-12 w-12 rounded-xl bg-slate-900 text-white flex items-center justify-center">
+            <Bell className="h-6 w-6 stroke-[1.5]" />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-gray-900">Notificações por E-mail</h3>
-            <p className="text-sm text-gray-500">Configure como e quando o sistema deve enviar alertas.</p>
+            <h3 className="text-lg font-normal text-slate-800 uppercase tracking-wider">Centro de Notificações</h3>
+            <p className="text-xs font-light text-slate-400 uppercase tracking-widest mt-1">Gerencie como o sistema se comunica com você.</p>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50">
-            <div className="space-y-0.5">
-              <label className="text-sm font-bold text-gray-900">Ativar Notificações</label>
-              <p className="text-xs text-gray-500">Habilita o envio automático de e-mails pelo sistema.</p>
+        <div className="space-y-8">
+          <div className="flex items-center justify-between p-6 rounded-xl bg-slate-50/50 border border-slate-100">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-800 uppercase tracking-widest">Ativar Notificações Globais</label>
+              <p className="text-[10px] font-light text-slate-400 uppercase tracking-widest">Habilita o envio de e-mails e alertas agendados.</p>
             </div>
             <button
               onClick={() => setLocalSettings({ ...localSettings, emailEnabled: !localSettings.emailEnabled })}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localSettings.emailEnabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${localSettings.emailEnabled ? 'bg-slate-800' : 'bg-slate-200'}`}
             >
               <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${localSettings.emailEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="notifyMissing"
-                checked={localSettings.notifyMissingConsolidation}
-                onChange={(e) => setLocalSettings({ ...localSettings, notifyMissingConsolidation: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <label htmlFor="notifyMissing" className="text-sm font-medium text-gray-700">
-                Notificar quando o consolidado do mês não estiver registrado
-              </label>
-            </div>
-
-            {localSettings.notifyMissingConsolidation && (
-              <div className="ml-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-500 uppercase">Dias antes do fechamento</label>
-                  <div className="relative">
-                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input
-                      type="number"
-                      value={localSettings.reminderDays}
-                      onChange={(e) => setLocalSettings({ ...localSettings, reminderDays: parseInt(e.target.value) })}
-                      className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-900"
-                    />
-                  </div>
+          <div className="p-6 rounded-xl border border-[#EFE2DE] bg-[#F9F4F2]/30">
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 rounded-lg bg-[#F9F4F2] flex items-center justify-center text-[#C57B67] shrink-0">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-medium text-[#C57B67] uppercase tracking-widest">Lógica Calendar-Driven</h4>
+                <p className="text-[10px] font-light text-slate-500 leading-relaxed mt-2 uppercase tracking-wide">
+                  A inteligência de envio de notificações foi movida para o <span className="font-medium text-slate-800">Módulo de Calendário</span>. 
+                  Os gatilhos estáticos foram desativados em favor de agendamentos dinâmicos baseados em eventos, prazos e reuniões.
+                </p>
+                <div className="mt-4">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="!h-9 !rounded-lg border-[#EFE2DE] text-[#C57B67] hover:bg-[#F9F4F2] text-[9px] uppercase tracking-widest"
+                    onClick={() => window.location.hash = '#calendar'}
+                  >
+                    Ir para o Calendário
+                  </Button>
                 </div>
+              </div>
+            </div>
+          </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-gray-500 uppercase">Destinatários</label>
-                  <div className="relative">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <select
-                      value={localSettings.recipients}
-                      onChange={(e) => setLocalSettings({ ...localSettings, recipients: e.target.value as any })}
-                      className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-200 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-900 appearance-none"
-                    >
-                      <option value="Admins">Apenas Administradores</option>
-                      <option value="Gestores">Gestores e Administradores</option>
-                      <option value="Todos">Todos os Colaboradores Pendentes</option>
-                    </select>
+          <div className="p-6 rounded-xl border border-slate-100 bg-slate-50/30">
+            <h4 className="text-[10px] font-medium text-slate-400 uppercase tracking-widest mb-6">Configurações Avançadas (Admin)</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-widest">Prioridade Padrão</label>
+                  <select className="bg-transparent text-[10px] font-medium text-slate-800 uppercase tracking-widest outline-none">
+                    <option>Média</option>
+                    <option>Alta</option>
+                    <option>Crítica</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-widest">Horário de Silêncio</label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-light text-slate-400">22:00 - 07:00</span>
+                    <button className="h-4 w-8 rounded-full bg-slate-200 relative">
+                      <span className="absolute left-1 top-1 h-2 w-2 rounded-full bg-white" />
+                    </button>
                   </div>
                 </div>
               </div>
-            )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-widest">Canais Ativos</label>
+                  <div className="flex gap-3">
+                    <span className="px-2 py-1 rounded bg-slate-100 text-[8px] font-medium text-slate-500 uppercase tracking-tighter">Email</span>
+                    <span className="px-2 py-1 rounded bg-slate-100 text-[8px] font-medium text-slate-500 uppercase tracking-tighter opacity-40">Push</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-widest">Frequência de Alerta</label>
+                  <select className="bg-transparent text-[10px] font-medium text-slate-800 uppercase tracking-widest outline-none text-right">
+                    <option>Imediato</option>
+                    <option>Resumo Diário</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-100 flex justify-end">
-            <Button onClick={handleSave} isLoading={isSaving} className="gap-2">
-              <Save className="h-4 w-4" />
-              Salvar Configurações
+          <div className="pt-6 border-t border-slate-100 flex justify-end">
+            <Button onClick={handleSave} isLoading={isSaving} className="!h-11 !rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-[10px] uppercase tracking-widest px-8">
+              Salvar Preferências
             </Button>
           </div>
         </div>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-              <Send className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">Disparo Manual</h3>
-              <p className="text-sm text-gray-500">Envie lembretes imediatamente para quem ainda não consolidou.</p>
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={handleTriggerReminders} 
-            isLoading={isSending}
-            disabled={!localSettings.emailEnabled}
-            className="gap-2 border-amber-200 text-amber-700 hover:bg-amber-50"
-          >
-            <Send className="h-4 w-4" />
-            Disparar Lembretes Agora
-          </Button>
-        </div>
-
-        {localSettings.lastRun && (
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-            Último disparo realizado em: {new Date(localSettings.lastRun).toLocaleString()}
-          </div>
-        )}
-        
-        {!localSettings.emailEnabled && (
-          <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 p-3 rounded-lg mt-4">
-            <AlertCircle className="h-4 w-4" />
-            As notificações por e-mail estão desativadas. Ative-as acima para disparar lembretes.
-          </div>
-        )}
       </div>
     </div>
   );

@@ -170,253 +170,213 @@ export const OrgManagement = ({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-10 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200 ring-4 ring-indigo-50">
-            <Network className="h-8 w-8" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
+            <Network className="h-7 w-7 stroke-[1.5]" />
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Gestão Organizacional</h1>
-            <p className="text-slate-500 font-medium">Gerencie áreas, times e a hierarquia da empresa.</p>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Gestão Organizacional</h1>
+            <p className="text-slate-400 text-[10px] font-light tracking-widest mt-1 uppercase">Gerencie a estrutura e hierarquia da sua empresa.</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 rounded-2xl bg-slate-100 p-1.5 border border-slate-200/50">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1 rounded-xl bg-slate-100/50 p-1 border border-slate-200/40">
             <button
               onClick={() => setViewMode('list')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest transition-all ${
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[10px] font-medium uppercase tracking-widest transition-all ${
                 viewMode === 'list' 
-                  ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' 
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                  ? 'bg-white text-slate-800 shadow-sm' 
+                  : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              <List className="h-4 w-4" /> Lista
+              <List className="h-3.5 w-3.5" /> Lista
             </button>
             <button
               onClick={() => setViewMode('visual')}
-              className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-widest transition-all ${
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 text-[10px] font-medium uppercase tracking-widest transition-all ${
                 viewMode === 'visual' 
-                  ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' 
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                  ? 'bg-white text-slate-800 shadow-sm' 
+                  : 'text-slate-400 hover:text-slate-600'
               }`}
             >
-              <GitGraph className="h-4 w-4" /> Visual
+              <GitGraph className="h-3.5 w-3.5" /> Visual
             </button>
           </div>
-          {isAdmin && (
-            <div className="flex gap-2 flex-wrap justify-end">
-              <Button variant="outline" onClick={() => { setEditingDiretoria(null); setIsDiretoriaModalOpen(true); }} className="!h-10 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 !rounded-xl px-4 font-bold shadow-sm text-xs">
-                <Plus className="h-3.5 w-3.5" />
-                Diretoria
-              </Button>
-              <Button variant="outline" onClick={() => { setEditingDept(null); setIsDeptModalOpen(true); }} className="!h-10 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 !rounded-xl px-4 font-bold shadow-sm text-xs">
-                <Plus className="h-3.5 w-3.5" />
-                Depto
-              </Button>
-              <Button variant="outline" onClick={() => { setEditingGerencia(null); setIsGerenciaModalOpen(true); }} className="!h-10 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 !rounded-xl px-4 font-bold shadow-sm text-xs">
-                <Plus className="h-3.5 w-3.5" />
-                Gerência
-              </Button>
-              <Button variant="outline" onClick={() => { setEditingServico(null); setIsServicoModalOpen(true); }} className="!h-10 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 !rounded-xl px-4 font-bold shadow-sm text-xs">
-                <Plus className="h-3.5 w-3.5" />
-                Serviço
-              </Button>
-              <Button onClick={() => { setEditingTeam(null); setIsTeamModalOpen(true); }} className="!h-10 gap-2 !rounded-xl px-4 font-bold shadow-lg shadow-indigo-200/50 text-xs">
-                <Plus className="h-3.5 w-3.5" />
-                Time
-              </Button>
-            </div>
-          )}
         </div>
       </div>
 
-      <div className="mx-auto max-w-full">
+      {/* Admin Actions Bar */}
+      {isAdmin && (
+        <div className="flex flex-wrap gap-3 p-1.5 bg-slate-50/50 rounded-2xl border border-slate-200/40 w-fit">
+          <Button variant="ghost" onClick={() => { setEditingDiretoria(null); setIsDiretoriaModalOpen(true); }} className="!h-10 gap-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl px-4 text-[9px] font-medium uppercase tracking-widest transition-all">
+            <Plus className="h-3.5 w-3.5" /> Diretoria
+          </Button>
+          <Button variant="ghost" onClick={() => { setEditingDept(null); setIsDeptModalOpen(true); }} className="!h-10 gap-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl px-4 text-[9px] font-medium uppercase tracking-widest transition-all">
+            <Plus className="h-3.5 w-3.5" /> Depto
+          </Button>
+          <Button variant="ghost" onClick={() => { setEditingGerencia(null); setIsGerenciaModalOpen(true); }} className="!h-10 gap-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl px-4 text-[9px] font-medium uppercase tracking-widest transition-all">
+            <Plus className="h-3.5 w-3.5" /> Gerência
+          </Button>
+          <Button variant="ghost" onClick={() => { setEditingServico(null); setIsServicoModalOpen(true); }} className="!h-10 gap-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl px-4 text-[9px] font-medium uppercase tracking-widest transition-all">
+            <Plus className="h-3.5 w-3.5" /> Serviço
+          </Button>
+          <Button onClick={() => { setEditingTeam(null); setIsTeamModalOpen(true); }} className="!h-10 gap-2 !rounded-xl bg-slate-800 text-white hover:bg-slate-700 px-6 text-[9px] font-medium uppercase tracking-widest shadow-sm transition-all">
+            <Plus className="h-3.5 w-3.5" /> Novo Time
+          </Button>
+        </div>
+      )}
+
+      <div className="mx-auto w-full">
         {viewMode === 'list' ? (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
             {/* Hierarchy Sections */}
-            <div className="space-y-4">
-              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
-                <Layout className="h-5 w-5 text-indigo-600" />
-                Estrutura Hierárquica
-              </h2>
+            <div className="space-y-10">
+              <div className="flex items-center gap-4">
+                <div className="h-px flex-1 bg-slate-100"></div>
+                <h2 className="text-[10px] font-medium uppercase tracking-[0.3em] text-slate-400 whitespace-nowrap">
+                  Estrutura Hierárquica
+                </h2>
+                <div className="h-px flex-1 bg-slate-100"></div>
+              </div>
               
               {/* Diretorias */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Diretorias</h3>
-                  {isAdmin && (
-                    <button 
-                      onClick={() => { setEditingDiretoria(null); setIsDiretoriaModalOpen(true); }}
-                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      title="Nova Diretoria"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h3 className="text-[9px] font-medium text-slate-400 uppercase tracking-widest">Diretorias</h3>
                 </div>
                 {diretorias.length === 0 && (
-                  <div className="p-4 text-center border-2 border-dashed border-slate-100 rounded-2xl text-slate-400 text-xs font-medium">
+                  <div className="p-10 text-center border border-dashed border-slate-200 rounded-3xl text-slate-300 text-[10px] font-light tracking-widest uppercase">
                     Nenhuma diretoria cadastrada.
                   </div>
                 )}
-                {diretorias.map(d => {
-                  const manager = users.find(u => u.id === d.managerId);
-                  return (
-                    <div key={d.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 shadow-sm group">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-gray-900">{d.name}</span>
-                        <span className="text-[10px] text-gray-500">Diretor: {manager?.name || 'Não definido'}</span>
-                      </div>
-                      {isAdmin && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditingDiretoria(d); setIsDiretoriaModalOpen(true); }} className="p-1 text-gray-400 hover:text-indigo-600"><Edit2 className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => confirmDelete(d.id, 'diretoria')} className="p-1 text-gray-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                <div className="grid gap-3">
+                  {diretorias.map(d => {
+                    const manager = users.find(u => u.id === d.managerId);
+                    return (
+                      <div key={d.id} className="flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_4px_rgba(0,0,0,0.02)] group hover:border-slate-300 transition-all duration-300">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm font-normal text-slate-800 uppercase tracking-tight">{d.name}</span>
+                          <span className="text-[9px] text-slate-400 font-light uppercase tracking-widest">Diretor: {manager?.name || 'Não definido'}</span>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => { setEditingDiretoria(d); setIsDiretoriaModalOpen(true); }} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-xl transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => confirmDelete(d.id, 'diretoria')} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Departamentos */}
-              <div className="space-y-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Departamentos</h3>
-                  {isAdmin && (
-                    <button 
-                      onClick={() => { setEditingDept(null); setIsDeptModalOpen(true); }}
-                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      title="Novo Departamento"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h3 className="text-[9px] font-medium text-slate-400 uppercase tracking-widest">Departamentos</h3>
                 </div>
-                {departamentos.length === 0 && (
-                  <div className="p-4 text-center border-2 border-dashed border-slate-100 rounded-2xl text-slate-400 text-xs font-medium">
-                    Nenhum departamento cadastrado.
-                  </div>
-                )}
-                {departamentos.map(dept => {
-                  const dir = diretorias.find(d => d.id === dept.diretoriaId);
-                  const manager = users.find(u => u.id === dept.managerId);
-                  return (
-                    <div key={dept.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 shadow-sm group">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-gray-900">{dept.name}</span>
-                        <div className="flex gap-2 text-[10px] text-gray-500">
-                          <span>{dir?.name || 'Sem Diretoria'}</span>
-                          <span>•</span>
-                          <span>Gerente: {manager?.name || 'Não definido'}</span>
+                <div className="grid gap-3">
+                  {departamentos.map(dept => {
+                    const dir = diretorias.find(d => d.id === dept.diretoriaId);
+                    const manager = users.find(u => u.id === dept.managerId);
+                    return (
+                      <div key={dept.id} className="flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_4px_rgba(0,0,0,0.02)] group hover:border-slate-300 transition-all duration-300">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm font-normal text-slate-800 uppercase tracking-tight">{dept.name}</span>
+                          <div className="flex items-center gap-3 text-[9px] text-slate-400 font-light uppercase tracking-widest">
+                            <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/50">{dir?.name || 'Sem Diretoria'}</span>
+                            <span className="h-1 w-1 rounded-full bg-slate-200"></span>
+                            <span>Gerente: {manager?.name || 'Não definido'}</span>
+                          </div>
                         </div>
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => { setEditingDept(dept); setIsDeptModalOpen(true); }} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-xl transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => confirmDelete(dept.id, 'departamento')} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )}
                       </div>
-                      {isAdmin && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditingDept(dept); setIsDeptModalOpen(true); }} className="p-1 text-gray-400 hover:text-indigo-600"><Edit2 className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => confirmDelete(dept.id, 'departamento')} className="p-1 text-gray-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Gerências */}
-              <div className="space-y-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Gerências</h3>
-                  {isAdmin && (
-                    <button 
-                      onClick={() => { setEditingGerencia(null); setIsGerenciaModalOpen(true); }}
-                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      title="Nova Gerência"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h3 className="text-[9px] font-medium text-slate-400 uppercase tracking-widest">Gerências</h3>
                 </div>
-                {gerencias.length === 0 && (
-                  <div className="p-4 text-center border-2 border-dashed border-slate-100 rounded-2xl text-slate-400 text-xs font-medium">
-                    Nenhuma gerência cadastrada.
-                  </div>
-                )}
-                {gerencias.map(ger => {
-                  const dept = departamentos.find(d => d.id === ger.departmentId);
-                  const manager = users.find(u => u.id === ger.managerId);
-                  return (
-                    <div key={ger.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 shadow-sm group">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-gray-900">{ger.name}</span>
-                        <div className="flex gap-2 text-[10px] text-gray-500">
-                          <span>{dept?.name || 'Sem Depto'}</span>
-                          <span>•</span>
-                          <span>Gerente: {manager?.name || 'Não definido'}</span>
+                <div className="grid gap-3">
+                  {gerencias.map(ger => {
+                    const dept = departamentos.find(d => d.id === ger.departmentId);
+                    const manager = users.find(u => u.id === ger.managerId);
+                    return (
+                      <div key={ger.id} className="flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_4px_rgba(0,0,0,0.02)] group hover:border-slate-300 transition-all duration-300">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm font-normal text-slate-800 uppercase tracking-tight">{ger.name}</span>
+                          <div className="flex items-center gap-3 text-[9px] text-slate-400 font-light uppercase tracking-widest">
+                            <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/50">{dept?.name || 'Sem Depto'}</span>
+                            <span className="h-1 w-1 rounded-full bg-slate-200"></span>
+                            <span>Gerente: {manager?.name || 'Não definido'}</span>
+                          </div>
                         </div>
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => { setEditingGerencia(ger); setIsGerenciaModalOpen(true); }} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-xl transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => confirmDelete(ger.id, 'gerencia')} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )}
                       </div>
-                      {isAdmin && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditingGerencia(ger); setIsGerenciaModalOpen(true); }} className="p-1 text-gray-400 hover:text-indigo-600"><Edit2 className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => confirmDelete(ger.id, 'gerencia')} className="p-1 text-gray-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Serviços */}
-              <div className="space-y-2 pt-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">Serviços</h3>
-                  {isAdmin && (
-                    <button 
-                      onClick={() => { setEditingServico(null); setIsServicoModalOpen(true); }}
-                      className="p-1 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      title="Novo Serviço"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </button>
-                  )}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h3 className="text-[9px] font-medium text-slate-400 uppercase tracking-widest">Serviços</h3>
                 </div>
-                {servicos.length === 0 && (
-                  <div className="p-4 text-center border-2 border-dashed border-slate-100 rounded-2xl text-slate-400 text-xs font-medium">
-                    Nenhum serviço cadastrado.
-                  </div>
-                )}
-                {servicos.map(srv => {
-                  const ger = gerencias.find(g => g.id === srv.gerenciaId);
-                  const manager = users.find(u => u.id === srv.managerId);
-                  return (
-                    <div key={srv.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 shadow-sm group">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-gray-900">{srv.name}</span>
-                        <div className="flex gap-2 text-[10px] text-gray-500">
-                          <span>{ger?.name || 'Sem Gerência'}</span>
-                          <span>•</span>
-                          <span>Supervisor: {manager?.name || 'Não definido'}</span>
+                <div className="grid gap-3">
+                  {servicos.map(srv => {
+                    const ger = gerencias.find(g => g.id === srv.gerenciaId);
+                    const manager = users.find(u => u.id === srv.managerId);
+                    return (
+                      <div key={srv.id} className="flex items-center justify-between p-5 bg-white rounded-2xl border border-slate-200/60 shadow-[0_2px_4px_rgba(0,0,0,0.02)] group hover:border-slate-300 transition-all duration-300">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-sm font-normal text-slate-800 uppercase tracking-tight">{srv.name}</span>
+                          <div className="flex items-center gap-3 text-[9px] text-slate-400 font-light uppercase tracking-widest">
+                            <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/50">{ger?.name || 'Sem Gerência'}</span>
+                            <span className="h-1 w-1 rounded-full bg-slate-200"></span>
+                            <span>Supervisor: {manager?.name || 'Não definido'}</span>
+                          </div>
                         </div>
+                        {isAdmin && (
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => { setEditingServico(srv); setIsServicoModalOpen(true); }} className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-xl transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => confirmDelete(srv.id, 'servico')} className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )}
                       </div>
-                      {isAdmin && (
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => { setEditingServico(srv); setIsServicoModalOpen(true); }} className="p-1 text-gray-400 hover:text-indigo-600"><Edit2 className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => confirmDelete(srv.id, 'servico')} className="p-1 text-gray-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
             {/* Teams Section */}
-            <div className="space-y-4">
-              <h2 className="flex items-center gap-2 text-lg font-bold text-gray-900">
-                <Users className="h-5 w-5 text-indigo-600" />
-                Times Operacionais
-              </h2>
-              <div className="grid gap-4">
+            <div className="space-y-10">
+              <div className="flex items-center gap-4">
+                <div className="h-px flex-1 bg-slate-100"></div>
+                <h2 className="text-[10px] font-medium uppercase tracking-[0.3em] text-slate-400 whitespace-nowrap">
+                  Times Operacionais
+                </h2>
+                <div className="h-px flex-1 bg-slate-100"></div>
+              </div>
+              <div className="grid gap-6">
                 {teams.map(team => {
                   const servico = servicos.find(s => s.id === team.servicoId);
                   const gerencia = gerencias.find(g => g.id === (team.gerenciaId || servico?.gerenciaId));
@@ -426,46 +386,50 @@ export const OrgManagement = ({
                   const leader = users.find(u => u.id === team.leaderId);
                   const teamMembers = users.filter(u => u.teamId === team.id);
                   return (
-                    <div key={team.id} className="group rounded-2xl border border-gray-100 bg-white p-5 shadow-sm transition-all hover:shadow-md">
+                    <div key={team.id} className="group rounded-3xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)] transition-all hover:border-slate-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
                       <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="flex flex-wrap items-center gap-1 text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">
-                            <span>{diretoria?.name || '...'}</span>
-                            <ChevronRight className="h-2 w-2" />
-                            <span>{depto?.name || '...'}</span>
-                            <ChevronRight className="h-2 w-2" />
-                            <span>{gerencia?.name || '...'}</span>
+                        <div className="space-y-4">
+                          <div className="flex flex-wrap items-center gap-2 text-[8px] font-medium text-slate-400 uppercase tracking-[0.2em]">
+                            <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/50">{diretoria?.name || '...'}</span>
+                            <ChevronRight className="h-2.5 w-2.5 opacity-30" />
+                            <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/50">{depto?.name || '...'}</span>
+                            <ChevronRight className="h-2.5 w-2.5 opacity-30" />
+                            <span className="bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200/50">{gerencia?.name || '...'}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-gray-900">{team.name}</h3>
-                            <ChevronRight className="h-3 w-3 text-gray-300" />
-                            <span className="text-xs font-medium text-gray-500">{servico ? servico.name : 'Serviço não encontrado'}</span>
+                          <div className="space-y-1">
+                            <h3 className="text-lg font-normal text-slate-800 uppercase tracking-tight">{team.name}</h3>
+                            <p className="text-[10px] font-light text-slate-400 uppercase tracking-widest">{servico ? servico.name : 'Serviço não definido'}</p>
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
-                            <UserIcon className="h-3.5 w-3.5" />
-                            Líder: {leader ? leader.name : 'Não definido'}
+                          <div className="flex items-center gap-3 text-[10px] font-light text-slate-500 uppercase tracking-widest">
+                            <UserIcon className="h-3.5 w-3.5 text-slate-300" />
+                            Líder: <span className="font-medium text-slate-700">{leader ? leader.name : 'Não definido'}</span>
                           </div>
                         </div>
                         {isAdmin && (
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => { setEditingTeam(team); setIsTeamModalOpen(true); }} className="p-1.5 text-gray-400 hover:text-indigo-600">
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                            <button onClick={() => { setEditingTeam(team); setIsTeamModalOpen(true); }} className="p-2.5 text-slate-400 hover:text-slate-800 hover:bg-slate-50 rounded-xl transition-colors">
                               <Edit2 className="h-4 w-4" />
                             </button>
-                            <button onClick={() => confirmDelete(team.id, 'team')} className="p-1.5 text-gray-400 hover:text-red-600">
+                            <button onClick={() => confirmDelete(team.id, 'team')} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors">
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         )}
                       </div>
-                      <div className="mt-4 flex items-center justify-between">
+                      <div className="mt-8 flex items-center justify-between border-t border-slate-50 pt-6">
                         <div className="flex -space-x-2">
                           {teamMembers.slice(0, 5).map(member => (
-                            <div key={member.id} className="h-7 w-7 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center text-[10px] font-bold text-gray-500" title={member.name}>
-                              {member.photoUrl ? <img src={member.photoUrl} className="h-full w-full rounded-full object-cover" /> : member.name.charAt(0)}
+                            <div key={member.id} className="h-9 w-9 rounded-full border-2 border-white bg-slate-50 flex items-center justify-center text-[10px] font-medium text-slate-400 shadow-sm overflow-hidden" title={member.name}>
+                              {member.photoUrl ? <img src={member.photoUrl} className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : member.name.charAt(0)}
                             </div>
                           ))}
+                          {teamMembers.length > 5 && (
+                            <div className="h-9 w-9 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[9px] font-medium text-slate-500 shadow-sm">
+                              +{teamMembers.length - 5}
+                            </div>
+                          )}
                         </div>
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        <span className="text-[9px] font-medium text-slate-400 uppercase tracking-[0.2em]">
                           {teamMembers.length} Colaboradores
                         </span>
                       </div>

@@ -52,6 +52,26 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
   const [itemToDeleteId, setItemToDeleteId] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<'consolidation' | 'indicator'>('consolidation');
 
+  // Auto-load existing consolidation when collaborator and month are selected
+  React.useEffect(() => {
+    if (selectedCollaborator && month && !editingConsolidationId && view === 'create') {
+      const existing = consolidations.find(c => 
+        c.collaboratorId === selectedCollaborator.id && 
+        c.month === month
+      );
+      if (existing) {
+        setEditingConsolidationId(existing.id);
+        setConsolidatedName(existing.name);
+        setTotalTarget(existing.totalTarget || '85');
+        setIsOnVacation(!!existing.isOnVacation);
+        setVacationStart(existing.vacationStart || '');
+        setVacationEnd(existing.vacationEnd || '');
+        setSelectedIndicators(existing.indicators);
+        toast.success(`Carregando consolidação existente para ${month}`);
+      }
+    }
+  }, [selectedCollaborator, month, consolidations, editingConsolidationId, view]);
+
   const filteredCollaborators = useMemo(() => {
     let filtered = users;
     if (currentUser?.permissions?.onlyOwnIndicators) {
@@ -119,7 +139,11 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
         code: kpi.code,
         name: kpi.name,
         defaultWeight: 10, // Default weight if not specified
-        polarity: kpi.polarity
+        polarity: kpi.polarity,
+        scoringType: kpi.scoringType,
+        scoringRanges: kpi.scoringRanges,
+        rules: kpi.rules,
+        travaZero: kpi.travaZero
       });
     });
 
@@ -133,7 +157,12 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
           defaultWeight: inv.weight || 10,
           startDate: inv.startDate,
           endDate: inv.endDate,
-          polarity: inv.polarity
+          polarity: inv.polarity,
+          scoringType: inv.scoringType,
+          scoringRanges: inv.scoringRanges,
+          rules: inv.rules,
+          travaZero: inv.travaZero,
+          rawTarget: inv.target
         });
       }
     });
@@ -170,6 +199,13 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
     setSelectedCollaborator(user);
     setIsCollaboratorListOpen(false);
     setCollaboratorSearch('');
+    
+    // Reset editing state when changing collaborator
+    setEditingConsolidationId(null);
+    setConsolidatedName('');
+    setIsOnVacation(false);
+    setVacationStart('');
+    setVacationEnd('');
 
     // Find all indicators assigned to this user in both sources
     const userKpis = kpis.filter(k => k.ownerId === user.id);
@@ -186,7 +222,11 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
         weight: 10,
         actual: k.actual || 0,
         target: k.target || 100,
-        polarity: k.polarity
+        polarity: k.polarity,
+        scoringType: k.scoringType,
+        scoringRanges: k.scoringRanges,
+        rules: k.rules,
+        travaZero: k.travaZero
       });
     });
 
@@ -207,7 +247,11 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
           weight: i.weight || 10,
           actual: 0,
           target: targetVal,
-          polarity: i.polarity
+          polarity: i.polarity,
+          scoringType: i.scoringType,
+          scoringRanges: i.scoringRanges,
+          rules: i.rules,
+          travaZero: i.travaZero
         });
       }
     });
@@ -250,20 +294,31 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
     return calculateWeightedAchievement(tempConsolidation);
   }, [displayedSelectedIndicators, selectedCollaborator, consolidatedName, totalTarget, month]);
 
-  const isWeightValid = totalWeight === 100;
+  const isWeightValid = totalWeight > 0;
   const canSave = currentUser?.accessLevel === 'Admin' || currentUser?.permissions?.canEditResults;
 
-  const addIndicator = (ind: BaseIndicator) => {
+  const addIndicator = (ind: any) => {
     if (selectedIndicators.some(s => s.id === ind.id)) {
       toast.error('Este indicador já foi adicionado');
       return;
     }
+
+    let targetVal = 100;
+    if (ind.rawTarget) {
+      const numeric = ind.rawTarget.replace(/[^0-9.]/g, '');
+      targetVal = parseFloat(numeric) || 100;
+    }
+
     setSelectedIndicators([...selectedIndicators, { 
       ...ind, 
       weight: ind.defaultWeight,
       actual: 0,
-      target: 100,
-      polarity: ind.polarity
+      target: targetVal,
+      polarity: ind.polarity || 'Cima',
+      scoringType: ind.scoringType || 'Binary',
+      scoringRanges: ind.scoringRanges || [],
+      rules: ind.rules || [],
+      travaZero: ind.travaZero
     }]);
   };
 
@@ -357,7 +412,7 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
     }
 
     if (!isWeightValid) {
-      toast.error('A soma dos pesos deve ser 100%');
+      toast.error('A soma dos pesos deve ser exatamente 100');
       return;
     }
 
@@ -543,9 +598,19 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-500">Peso:</span>
-                    <span className="text-sm font-bold text-indigo-600">{ind.weight}%</span>
+                    <span className="text-sm font-bold text-indigo-600">{ind.weight}</span>
                   </div>
                 </div>
+
+                {ind.rules && ind.rules.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-4">
+                    {ind.rules.map((r, i) => (
+                      <span key={i} className="text-[8px] bg-amber-50 text-amber-600 px-1 rounded border border-amber-100 font-bold">
+                        {r.comparison} {r.target}: {r.weight}%
+                      </span>
+                    ))}
+                  </div>
+                )}
                 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="flex flex-col gap-1 rounded-lg bg-gray-50 p-2 border border-gray-100">
@@ -580,20 +645,33 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-10 pb-12">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
+            <Calculator className="h-7 w-7 stroke-[1.5]" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Gestão de Indicadores</h1>
+            <p className="text-slate-400 text-[10px] font-light tracking-widest mt-1 uppercase">Consolide resultados e acompanhe o desempenho individual.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Tabs */}
-      <div className="flex items-center gap-1 p-1.5 bg-slate-100 rounded-2xl w-fit border border-slate-200">
+      <div className="flex items-center gap-1 p-1.5 bg-slate-100 rounded-2xl w-fit border border-slate-200 shadow-sm">
         <button
           onClick={() => {
             setView('create');
             setEditingConsolidationId(null);
             setSelectedCollaborator(null);
             setSelectedIndicators([]);
-            setConsolidatedName('Índice de Desempenho 2025.1');
+            setConsolidatedName('Índice de Desempenho');
             setIsOnVacation(false);
           }}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
-            view === 'create' && !editingConsolidationId ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' : 'text-slate-500 hover:text-slate-700'
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all duration-200 ${
+            view === 'create' && !editingConsolidationId ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           <Plus className="h-4 w-4" /> Novo Índice
@@ -601,8 +679,8 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
         {editingConsolidationId && (
           <button
             onClick={() => setView('create')}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
-              view === 'create' ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' : 'text-slate-500 hover:text-slate-700'
+            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all duration-200 ${
+              view === 'create' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
             }`}
           >
             <Edit2 className="h-4 w-4" /> Editando
@@ -610,16 +688,16 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
         )}
         <button
           onClick={() => setView('history')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
-            view === 'history' ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' : 'text-slate-500 hover:text-slate-700'
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all duration-200 ${
+            view === 'history' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           <History className="h-4 w-4" /> Histórico
         </button>
         <button
           onClick={() => setView('dashboard')}
-          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
-            view === 'dashboard' ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' : 'text-slate-500 hover:text-slate-700'
+          className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all duration-200 ${
+            view === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           <Layout className="h-4 w-4" /> Dashboard
@@ -739,7 +817,7 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                           })()}
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <span className="text-lg font-black text-indigo-600 tracking-tight">{calculateWeightedAchievement(item)}</span>
+                          <span className="text-lg font-black text-indigo-600 tracking-tight">{calculateWeightedAchievement(item)} pts</span>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
@@ -812,13 +890,13 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
               <div className="flex items-center gap-4 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/50">
                 <div className="flex flex-col items-end">
                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Nota Atual</span>
-                  <span className="text-3xl font-black text-indigo-600 tracking-tighter leading-none">{currentScore}</span>
+                  <span className="text-3xl font-black text-indigo-600 tracking-tighter leading-none">{currentScore} pts</span>
                 </div>
                 <div className="h-10 w-px bg-indigo-200/50 mx-2" />
                 <div className="flex flex-col items-end">
-                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Peso Total</span>
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Peso (Soma)</span>
                   <span className={`text-xl font-bold tracking-tight leading-none ${isWeightValid ? 'text-emerald-600' : 'text-amber-600'}`}>
-                    {totalWeight}%
+                    {totalWeight}
                   </span>
                 </div>
               </div>
@@ -1017,7 +1095,14 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                     className="group flex items-center justify-between rounded-2xl border border-slate-50 p-4 hover:border-indigo-100 hover:bg-indigo-50/30 transition-all duration-200"
                   >
                     <div className="flex flex-col gap-1">
-                      <span className="text-[10px] font-bold text-indigo-600 font-mono tracking-widest">{ind.code}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-indigo-600 font-mono tracking-widest">{ind.code}</span>
+                        {ind.scoringType && ind.scoringType !== 'Binary' && (
+                          <span className="text-[8px] font-black uppercase tracking-widest text-indigo-500 bg-indigo-50 px-1 py-0.5 rounded border border-indigo-100">
+                            {ind.scoringType === 'Linear' ? 'Linear' : 'Faixas'}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-xs font-bold text-slate-700 line-clamp-2 leading-snug">{ind.name}</span>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
@@ -1092,7 +1177,7 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                       </li>
                       <li className="flex items-center gap-3 text-[10px] font-bold text-slate-700">
                         <div className="h-1.5 w-1.5 rounded-full bg-indigo-500 shadow-sm shadow-indigo-200" />
-                        <span><strong>realizado</strong> ou <strong>Realizado</strong> (Valor numérico)</span>
+                        <span><strong>realizado</strong> ou <strong>Realizado</strong> (Valor numérico absoluto)</span>
                       </li>
                     </ul>
                     <div className="mt-4 rounded-xl bg-indigo-50 p-3 text-[10px] font-bold text-indigo-700 border border-indigo-100">
@@ -1128,16 +1213,43 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                             <Target className="h-5 w-5" />
                           </div>
                           <div>
-                            <span className="text-[10px] font-bold text-indigo-400 font-mono tracking-widest uppercase">
-                              {ind.code}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-indigo-400 font-mono tracking-widest uppercase">
+                                {ind.code}
+                              </span>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                {ind.rules && ind.rules.length > 0 ? 'Regras' : (ind.scoringType === 'Binary' ? 'Binário' : ind.scoringType === 'Linear' ? 'Linear' : 'Faixas')}
+                              </span>
+                              {ind.travaZero !== undefined && (
+                                <span className="text-[9px] font-black uppercase tracking-widest text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">
+                                  Trava: {ind.travaZero}%
+                                </span>
+                              )}
+                            </div>
                             <h4 className="text-sm font-bold text-slate-900">{ind.name}</h4>
+                            {ind.rules && ind.rules.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {ind.rules.map((r, i) => (
+                                  <span key={i} className="text-[8px] bg-amber-50 text-amber-600 px-1 rounded border border-amber-100 font-bold">
+                                    {r.comparison} {r.target}: {r.weight} pts
+                                  </span>
+                                ))}
+                              </div>
+                            ) : ind.scoringType === 'Range' && ind.scoringRanges && ind.scoringRanges.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {ind.scoringRanges.map((r, i) => (
+                                  <span key={i} className="text-[8px] bg-indigo-50 text-indigo-600 px-1 rounded border border-indigo-100 font-bold">
+                                    {r.min}-{r.max}%: {r.points} pts
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 bg-slate-50/50 rounded-2xl p-5 border border-slate-100">
                           <div className="flex flex-col gap-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Peso (%)</label>
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Peso (Pontos)</label>
                             <input 
                               type="number"
                               value={ind.weight}
@@ -1159,6 +1271,7 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                           <div className="flex flex-col gap-2">
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
                               <TrendingUp className="h-3 w-3 text-indigo-500" /> Realizado
+                              <span className="ml-1 text-[8px] lowercase font-normal">(valor absoluto)</span>
                             </label>
                             <div className="flex items-center gap-2">
                               <select 
@@ -1230,6 +1343,36 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
 
             <div className="p-6 border-t border-slate-100 bg-slate-50/30">
               <div className="flex flex-col gap-4">
+                {selectedIndicators.length > 0 && (
+                  <div className="mb-4 p-5 rounded-2xl bg-white border border-slate-100 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resumo de Performance</h4>
+                      <Badge variant={currentScore >= parseFloat(totalTarget || '85') ? 'success' : 'warning'} className="text-[9px] font-black uppercase tracking-widest">
+                        {currentScore >= parseFloat(totalTarget || '85') ? 'Meta Atingida' : 'Abaixo da Meta'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pontuação Atual</span>
+                        <span className={`text-3xl font-black ${currentScore >= parseFloat(totalTarget || '85') ? 'text-emerald-600' : 'text-indigo-600'}`}>
+                          {currentScore.toFixed(1)}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Meta do Mês</span>
+                        <span className="text-lg font-black text-slate-700">{totalTarget}%</span>
+                      </div>
+                    </div>
+                    <div className="mt-4 h-2 w-full rounded-full bg-slate-50 overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min((currentScore / parseFloat(totalTarget || '85')) * 100, 100)}%` }}
+                        className={`h-full rounded-full ${currentScore >= parseFloat(totalTarget || '85') ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {!canSave && (
                   <div className="flex items-center gap-3 rounded-2xl bg-amber-50 p-4 text-xs font-bold text-amber-700 border border-amber-100 shadow-sm shadow-amber-100/50">
                     <AlertCircle className="h-5 w-5 shrink-0 text-amber-500" />
@@ -1239,13 +1382,13 @@ export const IndicatorConsolidation = ({ users: propUsers, areas: propAreas, cur
                 {canSave && !isWeightValid && (
                   <div className="flex items-center gap-3 rounded-2xl bg-red-50 p-4 text-xs font-bold text-red-700 border border-red-100 shadow-sm shadow-red-100/50">
                     <AlertCircle className="h-5 w-5 shrink-0 text-red-500" />
-                    <span>A soma dos pesos deve ser exatamente 100. Atualmente está em {totalWeight}.</span>
+                    <span>A soma dos pesos deve ser maior que zero.</span>
                   </div>
                 )}
                 {canSave && isWeightValid && (
                   <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-4 text-xs font-bold text-emerald-700 border border-emerald-100 shadow-sm shadow-emerald-100/50">
                     <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
-                    <span>A soma dos pesos está correta! Você já pode salvar a consolidação.</span>
+                    <span>Configuração de pesos válida! Você já pode salvar a consolidação.</span>
                   </div>
                 )}
                 <Button 

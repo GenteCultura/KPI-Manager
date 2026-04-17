@@ -11,6 +11,7 @@ O sistema é uma plataforma de **Gestão de Desempenho Corporativo** focada na c
 *   **Charts:** Recharts (com foco em `ResponsiveContainer` e estabilidade de renderização).
 *   **Icons:** Lucide React.
 *   **State Management:** Zustand ou React Context (para persistência de filtros e dados globais).
+*   **Navigation:** TopNav (Barra superior fixa com menu responsivo e perfil integrado).
 
 ## 3. Arquitetura de Dados (Entidades)
 
@@ -28,6 +29,7 @@ O sistema é uma plataforma de **Gestão de Desempenho Corporativo** focada na c
 *   `id`, `collaboratorId`, `month` (AAAA-MM), `totalTarget` (Meta do IDC).
 *   `indicators`: Array de objetos contendo `code`, `name`, `weight`, `target` e `actual`.
 *   `finalScore`: Resultado calculado do IDC.
+*   **Integridade:** O sistema implementa uma lógica de **Deduplicação Automática**. Caso existam múltiplas consolidações para o mesmo colaborador no mesmo mês, os dashboards consideram apenas a entrada mais recente (baseada no timestamp `createdAt`).
 
 ### **Estrutura Organizacional**
 *   `Diretorias`, `Departamentos`, `Gerências`, `Times` (Tabelas de relacionamento para filtros em cascata).
@@ -47,7 +49,7 @@ O IDC é a média ponderada do atingimento de cada indicador individual:
 
 ### **Lógica de N/A e Férias**
 *   **Férias:** Se `isOnVacation` for `true` para o mês de referência, o sistema deve permitir marcar a consolidação como "Isento". No dashboard, este usuário é ignorado na média global para não penalizar o time.
-*   **Indicador N/D (Não Disponível):** Se um indicador específico não puder ser medido no mês, seu peso é redistribuído proporcionalmente entre os outros indicadores daquela consolidação, garantindo que a soma dos pesos considerados seja sempre 100%.
+*   **Indicador N/D (Não Disponível):** Se um indicador específico não puder ser medido no mês, seu peso é ignorado e o cálculo é realizado proporcionalmente entre os outros indicadores daquela consolidação.
 
 ### **Trilha de Auditoria**
 *   Toda alteração em valores de "Realizado" ou mudanças no "Inventário" deve gerar um log automático.
@@ -65,7 +67,18 @@ O IDC é a média ponderada do atingimento de cada indicador individual:
 *   **Verde (Sucesso):** Score >= Meta (ex: 85%).
 *   **Amarelo (Atenção):** Score entre 70% e 84%.
 *   **Vermelho (Crítico):** Score < 70%.
-*   *Nota: As cores devem possuir contraste adequado para acessibilidade.*
+*   **Cálculo Dinâmico:** O status dos KPIs é calculado em tempo real com base no realizado, meta e polaridade, garantindo que os dashboards reflitam a situação atual mesmo para dados importados sem status pré-definido.
+
+### **Notificações e Calendário**
+*   **Configuração por Evento:** Permite definir notificações personalizadas (Email/Push) para cada evento do calendário, com timings específicos antes do início ou fim.
+*   **Integração Backend:** As notificações são agendadas via logs estruturados que podem ser capturados por serviços de mensageria externos.
+
+### **Segurança e UX**
+*   **Gate de Autenticação Primário:** O sistema adota uma política de "Zero-Visibility" pré-login. Nenhuma interface, menu ou dado é renderizado antes da autenticação bem-sucedida, redirecionando automaticamente para a tela de Login em caso de expiração de sessão.
+*   **Confirmação de Exclusão:** Substituição de diálogos nativos (`window.confirm`) por modais customizados (`DeleteConfirmationModal`) para melhor integração visual e suporte a ambientes de iframe.
+*   **Homepage: Operation Center:** A página inicial funciona como um agregador de dados em tempo real, fornecendo uma visão 360° da saúde operacional, fluxo de auditoria e acesso rápido às ferramentas de gestão, alinhada a um layout de alta densidade (Max-width 1600px).
+*   **Central de Ajuda Integrada:** Sistema de FAQ e Suporte via chat flutuante, permitindo busca ativa por dúvidas e acesso rápido à documentação sem sair da tela operacional.
+*   **RBAC Aprimorado:** Filtros de visibilidade aplicados em todos os níveis (Diretoria, Time, Colaborador) respeitando as permissões do usuário logado.
 
 ### **Dashboards e Cross-filtering**
 *   **Estabilidade:** Gráficos envoltos em containers com altura fixa (`h-[400px]`) e uso de `debounce` no `ResponsiveContainer`.

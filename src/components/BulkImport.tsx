@@ -77,7 +77,7 @@ export const BulkImport = () => {
       'Nome', 'Email', 'Cargo', 'Matrícula', 'Diretoria', 'Departamento', 'Gerência', 'Time', 'Nível de Acesso', 'Status'
     ],
     inventory: [
-      'Código (Ignorado)', 'Nome do Indicador', 'Tipo (Individual/Coletivo)', 'Cargo Alvo', 'Email do Responsável', 'Meta', 'Peso (%)', 'Categoria', 'Frequência', 'Polaridade'
+      'Código (Ignorado)', 'Nome do Indicador', 'Tipo (Individual/Coletivo)', 'Cargo Alvo', 'Email do Responsável', 'Meta', 'Peso (Pontos)', 'Categoria', 'Frequência', 'Polaridade', 'Trava Zero'
     ],
     results: [
       'Código do Indicador', 'Nome do Indicador', 'Responsável', 'Valor Realizado'
@@ -282,7 +282,7 @@ export const BulkImport = () => {
       }
 
       try {
-        const [, name, type, targetRole, respEmail, target, weight, category, frequency, polarity] = row.data;
+        const [, name, type, targetRole, respEmail, target, weight, category, frequency, polarity, travaZero] = row.data;
 
         const responsible = users.find(u => u.email === respEmail);
         if (!responsible) throw new Error('Responsável não encontrado');
@@ -309,6 +309,7 @@ export const BulkImport = () => {
           frequency: (frequency as KPIFrequency) || 'Mensal',
           polarity: (polarity as KPIPolarity) || 'Cima',
           status: 'Ativo',
+          travaZero: Number(travaZero) || 70,
           startDate: new Date().toISOString().split('T')[0],
           endDate: new Date(new Date().getFullYear(), 11, 31).toISOString().split('T')[0]
         };
@@ -328,28 +329,52 @@ export const BulkImport = () => {
     let errorCount = 0;
     const details: string[] = [];
 
+    // Group rows by consolidationId to avoid race conditions
+    const groups: { [id: string]: { actual: number; code: string; userId: string; period: string }[] } = {};
+    
     for (const row of rows) {
       if (row.status === 'invalid') {
         errorCount++;
         details.push(`Linha ${rows.indexOf(row) + 2}: ${row.errors.join(', ')}`);
         continue;
       }
+      
+      const [code, , , actual] = row.data;
+      const indicator = inventoryIndicators.find(ind => ind.code === code);
+      if (!indicator) continue;
 
+      const period = filters.period;
+      const userId = indicator.responsibleId;
+      const consolidationId = `${userId}_${period}`;
+      
+      if (!groups[consolidationId]) groups[consolidationId] = [];
+      groups[consolidationId].push({ actual: Number(actual), code, userId, period });
+    }
+
+    for (const [consolidationId, updates] of Object.entries(groups)) {
       try {
-        const [code, , , actual] = row.data;
-        const indicator = inventoryIndicators.find(ind => ind.code === code);
-        if (!indicator) throw new Error(`Indicador ${code} não encontrado`);
-
-        // Find or create consolidation for this period and user
-        const period = filters.period;
-        const userId = indicator.responsibleId;
-        const consolidationId = `${userId}_${period}`;
-        
+        const { userId, period } = updates[0]; // Get from the first update in the group
         let consolidation = consolidations.find(c => c.id === consolidationId);
 
         if (!consolidation) {
           const user = users.find(u => u.id === userId);
           if (!user) throw new Error('Usuário responsável não encontrado');
+
+          const newIndicators = updates.map(u => {
+            const indicator = inventoryIndicators.find(ind => ind.code === u.code)!;
+            return {
+              id: indicator.id,
+              code: indicator.code,
+              name: indicator.name,
+              defaultWeight: indicator.weight,
+              target: parseFloat(indicator.target) || 0,
+              weight: indicator.weight,
+              actual: u.actual,
+              unit: indicator.unit,
+              polarity: indicator.polarity,
+              travaZero: indicator.travaZero
+            };
+          });
 
           const newConsolidation: Partial<ConsolidatedIndicator> = {
             id: consolidationId,
@@ -358,17 +383,7 @@ export const BulkImport = () => {
             name: `Índice de Desempenho`,
             totalTarget: '85',
             month: period,
-            indicators: [{
-              id: indicator.id,
-              code: indicator.code,
-              name: indicator.name,
-              defaultWeight: indicator.weight,
-              target: parseFloat(indicator.target) || 0,
-              weight: indicator.weight,
-              actual: Number(actual),
-              unit: indicator.unit,
-              polarity: indicator.polarity
-            }],
+            indicators: newIndicators,
             diretoriaId: user.diretoriaId,
             departmentId: user.departmentId,
             teamId: user.teamId,
@@ -376,36 +391,39 @@ export const BulkImport = () => {
           };
           await setDoc(doc(db, 'consolidations', consolidationId), toSnakeCase(newConsolidation));
         } else {
-          const existingIndicator = consolidation.indicators.find(ind => ind.code === code);
-          let updatedIndicators;
-
-          if (existingIndicator) {
-            updatedIndicators = consolidation.indicators.map(ind => 
-              ind.code === code ? { ...ind, actual: Number(actual) } : ind
-            );
-          } else {
-            updatedIndicators = [...consolidation.indicators, {
-              id: indicator.id,
-              code: indicator.code,
-              name: indicator.name,
-              defaultWeight: indicator.weight,
-              target: parseFloat(indicator.target) || 0,
-              weight: indicator.weight,
-              actual: Number(actual),
-              unit: indicator.unit,
-              polarity: indicator.polarity
-            }];
+          let currentIndicators = [...consolidation.indicators];
+          
+          for (const u of updates) {
+            const indicator = inventoryIndicators.find(ind => ind.code === u.code)!;
+            const existingIndex = currentIndicators.findIndex(ind => ind.code === u.code);
+            
+            if (existingIndex >= 0) {
+              currentIndicators[existingIndex] = { ...currentIndicators[existingIndex], actual: u.actual };
+            } else {
+              currentIndicators.push({
+                id: indicator.id,
+                code: indicator.code,
+                name: indicator.name,
+                defaultWeight: indicator.weight,
+                target: parseFloat(indicator.target) || 0,
+                weight: indicator.weight,
+                actual: u.actual,
+                unit: indicator.unit,
+                polarity: indicator.polarity,
+                travaZero: indicator.travaZero
+              });
+            }
           }
 
           await updateDoc(doc(db, 'consolidations', consolidationId), {
-            indicators: updatedIndicators.map(ind => toSnakeCase(ind)),
+            indicators: currentIndicators.map(ind => toSnakeCase(ind)),
             updatedAt: new Date().toISOString()
           });
         }
-        successCount++;
+        successCount += updates.length;
       } catch (err: any) {
-        errorCount++;
-        details.push(`Linha ${rows.indexOf(row) + 2}: Erro no banco (${err.message})`);
+        errorCount += updates.length;
+        details.push(`Consolidação ${consolidationId}: Erro no banco (${err.message})`);
       }
     }
     return { successCount, errorCount, details };
@@ -450,114 +468,116 @@ export const BulkImport = () => {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-10 pb-12">
       {/* Header & Filters */}
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-5">
-            <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200 ring-4 ring-indigo-50">
-              <Upload className="h-8 w-8" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-black tracking-tight text-slate-900">Importação em Massa</h1>
-              <p className="text-slate-500 font-medium">Gerencie dados em escala com eficiência e precisão.</p>
-            </div>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
+            <Upload className="h-7 w-7 stroke-[1.5]" />
           </div>
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={downloadTemplate} className="!h-12 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50 !rounded-2xl px-6 font-bold shadow-sm">
-              <Download className="h-5 w-5" />
-              Baixar Planilha Modelo
-            </Button>
+          <div>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Importação em Massa</h1>
+            <p className="text-slate-400 text-[10px] font-light tracking-widest mt-1 uppercase">Gerencie dados em escala com eficiência e precisão.</p>
           </div>
         </div>
+        <div className="flex gap-3">
+          <Button 
+            variant="outline" 
+            onClick={downloadTemplate} 
+            className="!h-11 !rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 px-6 text-[10px] font-medium uppercase tracking-widest transition-all"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Baixar Modelo
+          </Button>
+        </div>
+      </div>
 
-        {/* Top Filters Bar */}
-        <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-xl shadow-slate-200/40">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-5">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Diretoria</label>
-              <div className="relative">
-                <select
-                  className="h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-2 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer pr-10"
-                  value={filters.diretoriaId}
-                  onChange={(e) => setFilters({ ...filters, diretoriaId: e.target.value })}
-                >
-                  <option value="">Todas as Diretorias</option>
-                  {diretorias.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+      {/* Top Filters Bar */}
+      <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-5">
+          <div className="flex flex-col gap-2">
+            <label className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 ml-1">Diretoria</label>
+            <div className="relative">
+              <select
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/30 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none cursor-pointer pr-10"
+                value={filters.diretoriaId}
+                onChange={(e) => setFilters({ ...filters, diretoriaId: e.target.value })}
+              >
+                <option value="">Todas</option>
+                {diretorias.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Departamento</label>
-              <div className="relative">
-                <select
-                  className="h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-2 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer pr-10"
-                  value={filters.departmentId}
-                  onChange={(e) => setFilters({ ...filters, departmentId: e.target.value })}
-                >
-                  <option value="">Todos os Departamentos</option>
-                  {departamentos
-                    .filter(d => !filters.diretoriaId || d.diretoriaId === filters.diretoriaId)
-                    .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 ml-1">Departamento</label>
+            <div className="relative">
+              <select
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/30 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none cursor-pointer pr-10"
+                value={filters.departmentId}
+                onChange={(e) => setFilters({ ...filters, departmentId: e.target.value })}
+              >
+                <option value="">Todos</option>
+                {departamentos
+                  .filter(d => !filters.diretoriaId || d.diretoriaId === filters.diretoriaId)
+                  .map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Gerência</label>
-              <div className="relative">
-                <select
-                  className="h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-2 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer pr-10"
-                  value={filters.gerenciaId}
-                  onChange={(e) => setFilters({ ...filters, gerenciaId: e.target.value })}
-                >
-                  <option value="">Todas as Gerências</option>
-                  {gerencias
-                    .filter(g => !filters.departmentId || g.departmentId === filters.departmentId)
-                    .map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 ml-1">Gerência</label>
+            <div className="relative">
+              <select
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/30 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none cursor-pointer pr-10"
+                value={filters.gerenciaId}
+                onChange={(e) => setFilters({ ...filters, gerenciaId: e.target.value })}
+              >
+                <option value="">Todas</option>
+                {gerencias
+                  .filter(g => !filters.departmentId || g.departmentId === filters.departmentId)
+                  .map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Time</label>
-              <div className="relative">
-                <select
-                  className="h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 px-4 py-2 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all appearance-none cursor-pointer pr-10"
-                  value={filters.teamId}
-                  onChange={(e) => setFilters({ ...filters, teamId: e.target.value })}
-                >
-                  <option value="">Todos os Times</option>
-                  {teams
-                    .filter(t => !filters.gerenciaId || t.gerenciaId === filters.gerenciaId)
-                    .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 ml-1">Time</label>
+            <div className="relative">
+              <select
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/30 px-4 py-2 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none cursor-pointer pr-10"
+                value={filters.teamId}
+                onChange={(e) => setFilters({ ...filters, teamId: e.target.value })}
+              >
+                <option value="">Todos</option>
+                {teams
+                  .filter(t => !filters.gerenciaId || t.gerenciaId === filters.gerenciaId)
+                  .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Período (AAAA-MM)</label>
-              <div className="relative">
-                <Calendar className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="month"
-                  className="h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 pl-11 pr-4 py-2 text-sm font-bold text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
-                  value={filters.period}
-                  onChange={(e) => setFilters({ ...filters, period: e.target.value })}
-                />
-              </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 ml-1">Período (AAAA-MM)</label>
+            <div className="relative">
+              <Calendar className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+              <input
+                type="month"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/30 pl-10 pr-4 py-2 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all"
+                value={filters.period}
+                onChange={(e) => setFilters({ ...filters, period: e.target.value })}
+              />
             </div>
           </div>
         </div>
       </div>
 
       {/* Import Type Selector */}
-      <div className="flex items-center gap-2 overflow-x-auto rounded-2xl bg-slate-100 p-1.5 no-scrollbar border border-slate-200/50 w-fit">
+      <div className="flex items-center gap-2 overflow-x-auto rounded-2xl bg-slate-100/50 p-1.5 no-scrollbar border border-slate-200/40 w-fit">
         {[
           { id: 'users', label: 'Colaboradores', icon: Users },
           { id: 'inventory', label: 'Inventário', icon: Layout },
@@ -566,10 +586,10 @@ export const BulkImport = () => {
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id as ImportType); setPreview(null); }}
-            className={`flex items-center gap-2 whitespace-nowrap rounded-xl px-6 py-3 text-xs font-black uppercase tracking-widest transition-all ${
+            className={`flex items-center gap-3 whitespace-nowrap rounded-xl px-6 py-3 text-[10px] font-medium uppercase tracking-widest transition-all ${
               activeTab === tab.id 
-                ? 'bg-white text-indigo-600 shadow-md shadow-indigo-100' 
-                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                ? 'bg-white text-slate-800 shadow-sm' 
+                : 'text-slate-400 hover:text-slate-600'
             }`}
           >
             <tab.icon className="h-4 w-4" />
@@ -585,10 +605,10 @@ export const BulkImport = () => {
           onDragLeave={() => setIsDragging(false)}
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`relative group cursor-pointer rounded-[2.5rem] border-4 border-dashed p-16 text-center transition-all duration-500 ${
+          className={`relative group cursor-pointer rounded-3xl border-2 border-dashed p-20 text-center transition-all duration-300 ${
             isDragging 
-              ? 'border-indigo-500 bg-indigo-50/50 scale-[0.99]' 
-              : 'border-slate-100 bg-white hover:border-indigo-200 hover:bg-indigo-50/10'
+              ? 'border-slate-400 bg-slate-50 scale-[0.99]' 
+              : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/30'
           }`}
         >
           <input 
@@ -598,18 +618,18 @@ export const BulkImport = () => {
             accept=".xlsx, .xls, .csv" 
             onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
           />
-          <div className="space-y-6">
-            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] bg-indigo-50 text-indigo-600 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-500">
-              <Upload className="h-12 w-12" />
+          <div className="space-y-8">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 border border-slate-200/50 group-hover:scale-105 transition-transform duration-300 shadow-sm">
+              <Upload className="h-10 w-10" />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-slate-900">Arraste seu arquivo aqui</h2>
-              <p className="text-slate-500 font-medium mt-2">Ou clique para selecionar um arquivo do seu computador</p>
+              <h2 className="text-xl font-normal text-slate-800 uppercase tracking-tight">Arraste seu arquivo aqui</h2>
+              <p className="text-[10px] font-light text-slate-400 uppercase tracking-widest mt-2">Ou clique para selecionar do seu computador</p>
             </div>
             <div className="flex justify-center gap-4">
-              <span className="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">XLSX</span>
-              <span className="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">XLS</span>
-              <span className="px-4 py-2 rounded-full bg-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">CSV</span>
+              <span className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-100 text-[8px] font-medium text-slate-400 uppercase tracking-widest">XLSX</span>
+              <span className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-100 text-[8px] font-medium text-slate-400 uppercase tracking-widest">XLS</span>
+              <span className="px-4 py-2 rounded-xl bg-slate-50 border border-slate-100 text-[8px] font-medium text-slate-400 uppercase tracking-widest">CSV</span>
             </div>
           </div>
         </div>
@@ -617,28 +637,28 @@ export const BulkImport = () => {
 
       {/* Preview & Logs */}
       {preview && (
-        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-          <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[0_4px_12px_rgba(0,0,0,0.02)] overflow-hidden">
+          <div className="p-8 bg-slate-50/30 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-5">
+              <div className="h-12 w-12 rounded-2xl bg-white border border-slate-200/50 flex items-center justify-center text-slate-400 shadow-sm">
                 <FileSpreadsheet className="h-6 w-6" />
               </div>
               <div>
-                <span className="font-black text-slate-900 block">Pré-visualização de Dados</span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{preview.rows.length} registros encontrados</span>
+                <span className="text-sm font-normal text-slate-800 uppercase tracking-tight block">Pré-visualização</span>
+                <span className="text-[9px] font-light text-slate-400 uppercase tracking-widest">{preview.rows.length} registros encontrados</span>
               </div>
             </div>
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setPreview(null)} disabled={isImporting} className="!rounded-xl font-bold">
+            <div className="flex gap-4">
+              <Button variant="outline" onClick={() => setPreview(null)} disabled={isImporting} className="!h-11 !rounded-xl text-[10px] font-medium uppercase tracking-widest">
                 Cancelar
               </Button>
               <Button 
                 onClick={handleImport} 
                 isLoading={isImporting} 
-                className="gap-2 !rounded-xl font-bold shadow-lg shadow-indigo-100"
+                className="!h-11 !rounded-xl bg-slate-800 text-white px-8 text-[10px] font-medium uppercase tracking-widest shadow-lg"
                 disabled={preview.rows.every(r => r.status === 'invalid')}
               >
-                <Save className="h-4 w-4" />
+                <Save className="h-4 w-4 mr-2" />
                 Confirmar Importação
               </Button>
             </div>
@@ -646,15 +666,15 @@ export const BulkImport = () => {
 
           {/* Error Log Summary */}
           {preview.rows.some(r => r.status === 'invalid') && (
-            <div className="p-6 bg-rose-50 border-b border-rose-100">
-              <h4 className="text-sm font-black text-rose-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <div className="p-8 bg-rose-50/30 border-b border-rose-100">
+              <h4 className="text-[10px] font-medium text-rose-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
                 <AlertCircle className="h-4 w-4" />
                 Log de Inconsistências
               </h4>
-              <div className="max-h-40 overflow-y-auto space-y-2">
+              <div className="max-h-40 overflow-y-auto space-y-3 custom-scrollbar">
                 {preview.rows.filter(r => r.status === 'invalid').map((row, i) => (
-                  <div key={i} className="text-xs font-medium text-rose-700 flex gap-2">
-                    <span className="font-black shrink-0">Linha {preview.rows.indexOf(row) + 2}:</span>
+                  <div key={i} className="text-[10px] font-light text-rose-600 flex gap-3 uppercase tracking-widest">
+                    <span className="font-medium shrink-0">Linha {preview.rows.indexOf(row) + 2}:</span>
                     <span>{row.errors.join(', ')}</span>
                   </div>
                 ))}
@@ -662,28 +682,28 @@ export const BulkImport = () => {
             </div>
           )}
 
-          <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 sticky top-0 z-10">
+          <div className="overflow-x-auto max-h-[500px] custom-scrollbar">
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/50 sticky top-0 z-10">
                 <tr>
-                  <th className="px-6 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">Status</th>
+                  <th className="px-8 py-5 text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100">Status</th>
                   {preview.headers.map((h, i) => (
-                    <th key={i} className="px-6 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100 whitespace-nowrap">{h}</th>
+                    <th key={i} className="px-8 py-5 text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400 border-b border-slate-100 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {preview.rows.map((row, i) => (
-                  <tr key={i} className={`hover:bg-indigo-50/20 transition-colors ${row.status === 'invalid' ? 'bg-rose-50/20' : ''}`}>
-                    <td className="px-6 py-4">
+                  <tr key={i} className={`hover:bg-slate-50/50 transition-colors ${row.status === 'invalid' ? 'bg-rose-50/10' : ''}`}>
+                    <td className="px-8 py-5">
                       {row.status === 'valid' ? (
-                        <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                        <CheckCircle2 className="h-5 w-5 text-emerald-400" />
                       ) : (
-                        <AlertCircle className="h-5 w-5 text-rose-500" />
+                        <AlertCircle className="h-5 w-5 text-rose-400" />
                       )}
                     </td>
                     {row.data.map((cell: any, j: number) => (
-                      <td key={j} className="px-6 py-4 text-slate-600 font-bold whitespace-nowrap">{String(cell || '')}</td>
+                      <td key={j} className="px-8 py-5 text-[10px] font-light text-slate-600 uppercase tracking-widest whitespace-nowrap">{String(cell || '')}</td>
                     ))}
                   </tr>
                 ))}

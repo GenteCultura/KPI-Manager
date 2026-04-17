@@ -18,7 +18,10 @@ import {
 import { useStore } from '../store/useStore';
 import { DataLog, DataLogType } from '../types';
 import { Input, Badge } from './ui/Input';
+import { Button } from './ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as XLSX from 'xlsx';
+import { toast } from 'react-hot-toast';
 
 export const DataLogs = () => {
   const { dataLogs, users } = useStore();
@@ -51,58 +54,72 @@ export const DataLogs = () => {
   }, [dataLogs]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-10 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200 ring-4 ring-indigo-50">
-            <Database className="h-8 w-8" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
+            <Database className="h-7 w-7 stroke-[1.5]" />
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Logs de Dados</h1>
-            <p className="text-slate-500 font-medium">Histórico de importações e exportações do sistema.</p>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Logs de Dados</h1>
+            <p className="text-slate-400 text-[10px] font-light tracking-widest mt-1 uppercase">Histórico de importações e exportações do sistema.</p>
           </div>
         </div>
+        <Button 
+          variant="outline" 
+          onClick={() => {
+            const worksheet = XLSX.utils.json_to_sheet(filteredLogs);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Logs");
+            XLSX.writeFile(workbook, `Logs_Sistema_${new Date().toISOString().split('T')[0]}.xlsx`);
+            toast.success('Logs exportados com sucesso!');
+          }}
+          className="!rounded-xl gap-2 border-slate-200 text-slate-600 hover:bg-slate-50"
+        >
+          <Download className="h-4 w-4" />
+          Exportar Logs
+        </Button>
       </div>
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-indigo-50 rounded-lg">
-              <Upload className="h-5 w-5 text-indigo-600" />
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <Upload className="h-5 w-5 text-slate-400" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Importações</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400">Importações</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter text-slate-900">{stats.imports}</span>
-            <span className="text-xs font-medium text-slate-500 mt-1">Arquivos processados</span>
+            <span className="text-3xl font-normal tracking-tight text-slate-800">{stats.imports}</span>
+            <span className="text-[9px] font-light text-slate-400 mt-2 uppercase tracking-[0.2em]">Arquivos processados</span>
           </div>
         </div>
 
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-emerald-50 rounded-lg">
-              <Download className="h-5 w-5 text-emerald-600" />
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <Download className="h-5 w-5 text-slate-400" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Exportações</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400">Exportações</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter text-slate-900">{stats.exports}</span>
-            <span className="text-xs font-medium text-slate-500 mt-1">Relatórios gerados</span>
+            <span className="text-3xl font-normal tracking-tight text-slate-800">{stats.exports}</span>
+            <span className="text-[9px] font-light text-slate-400 mt-2 uppercase tracking-[0.2em]">Relatórios gerados</span>
           </div>
         </div>
 
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-rose-50 rounded-lg">
-              <XCircle className="h-5 w-5 text-rose-600" />
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <XCircle className="h-5 w-5 text-slate-400" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Erros</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400">Erros</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter text-slate-900">{stats.errors}</span>
-            <span className="text-xs font-medium text-slate-500 mt-1">Falhas registradas</span>
+            <span className="text-3xl font-normal tracking-tight text-slate-800">{stats.errors}</span>
+            <span className="text-[9px] font-light text-slate-400 mt-2 uppercase tracking-[0.2em]">Falhas registradas</span>
           </div>
         </div>
       </div>

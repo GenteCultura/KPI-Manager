@@ -161,6 +161,24 @@
         "status": { "type": "string", "enum": ["SUCCESS", "ERROR", "PARTIAL"] },
         "details": { "type": "string" }
       }
+    },
+    "CalendarEvent": {
+      "title": "Calendar Event",
+      "description": "Event or deadline displayed on the system calendar",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "type": { "type": "string", "enum": ["Deadline", "Meeting", "Holiday", "Other"] },
+        "createdBy": { "type": "string" },
+        "createdById": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "color": { "type": "string" }
+      },
+      "required": ["id", "title", "startDate", "endDate", "type", "createdById"]
     }
   },
   "firestore": {
@@ -175,6 +193,7 @@
     "audit_logs": { "schema": "AuditLog", "description": "System audit trail" },
     "inventory_indicators": { "schema": "InventoryIndicator", "description": "Inventory of indicators" },
     "data_logs": { "schema": "DataLog", "description": "Import/Export logs" },
-    "areas": { "schema": "object", "description": "Legacy areas" }
+    "areas": { "schema": "object", "description": "Legacy areas" },
+    "calendar_events": { "schema": "CalendarEvent", "description": "Events and deadlines" }
   }
 }

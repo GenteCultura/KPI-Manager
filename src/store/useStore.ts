@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, KPI, ConsolidatedIndicator, Area, Team, AuditLog, InventoryIndicator, Diretoria, Departamento, Gerencia, Servico, NotificationSettings, DataLog } from '../types';
+import { User, KPI, ConsolidatedIndicator, Area, Team, AuditLog, InventoryIndicator, BaseIndicator, Diretoria, Departamento, Gerencia, Servico, NotificationSettings, DataLog, CalendarEvent } from '../types';
 
 interface AppState {
   users: User[];
@@ -15,7 +15,9 @@ interface AppState {
   auditLogs: AuditLog[];
   dataLogs: DataLog[];
   inventoryIndicators: InventoryIndicator[];
+  baseIndicators: BaseIndicator[];
   notificationSettings: NotificationSettings | null;
+  calendarEvents: CalendarEvent[];
   
   // Actions
   setUsers: (users: User[]) => void;
@@ -51,7 +53,17 @@ interface AppState {
   updateInventoryIndicator: (indicator: InventoryIndicator) => void;
   deleteInventoryIndicator: (id: string) => void;
 
+  setBaseIndicators: (indicators: BaseIndicator[]) => void;
+  addBaseIndicator: (indicator: BaseIndicator) => void;
+  updateBaseIndicator: (indicator: BaseIndicator) => void;
+  deleteBaseIndicator: (id: string) => void;
+
   setNotificationSettings: (settings: NotificationSettings) => void;
+
+  setCalendarEvents: (events: CalendarEvent[]) => void;
+  addCalendarEvent: (event: CalendarEvent) => void;
+  updateCalendarEvent: (event: CalendarEvent) => void;
+  deleteCalendarEvent: (id: string) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -69,6 +81,7 @@ export const useStore = create<AppState>()(
       auditLogs: [],
       dataLogs: [],
       inventoryIndicators: [],
+      baseIndicators: [],
       notificationSettings: null,
       
       setUsers: (users) => set({ users }),
@@ -130,7 +143,30 @@ export const useStore = create<AppState>()(
         inventoryIndicators: state.inventoryIndicators.filter((i) => i.id !== id) 
       })),
 
+      setBaseIndicators: (baseIndicators) => set({ baseIndicators }),
+      addBaseIndicator: (indicator) => set((state) => ({ 
+        baseIndicators: state.baseIndicators.some(i => i.id === indicator.id) ? state.baseIndicators : [...state.baseIndicators, indicator] 
+      })),
+      updateBaseIndicator: (indicator) => set((state) => ({ 
+        baseIndicators: state.baseIndicators.map((i) => (i.id === indicator.id ? indicator : i)) 
+      })),
+      deleteBaseIndicator: (id) => set((state) => ({ 
+        baseIndicators: state.baseIndicators.filter((i) => i.id !== id) 
+      })),
+
       setNotificationSettings: (notificationSettings) => set({ notificationSettings }),
+
+      calendarEvents: [],
+      setCalendarEvents: (calendarEvents) => set({ calendarEvents }),
+      addCalendarEvent: (event) => set((state) => ({ 
+        calendarEvents: state.calendarEvents.some(e => e.id === event.id) ? state.calendarEvents : [...state.calendarEvents, event] 
+      })),
+      updateCalendarEvent: (event) => set((state) => ({ 
+        calendarEvents: state.calendarEvents.map((e) => (e.id === event.id ? event : e)) 
+      })),
+      deleteCalendarEvent: (id) => set((state) => ({ 
+        calendarEvents: state.calendarEvents.filter((e) => e.id !== id) 
+      })),
     }),
     {
       name: 'kpi-manager-storage',

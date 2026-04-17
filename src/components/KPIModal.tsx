@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { KPI, DEPARTMENTS, DEPARTMENT_CODES, KPIUnit, KPIPolarity, KPIFrequency, KPICategory, User } from '../types';
+import { KPI, DEPARTMENTS, DEPARTMENT_CODES, KPIUnit, KPIPolarity, KPIFrequency, KPICategory, User, ScoringType, ScoringRange, ScoringRule } from '../types';
 import { Modal } from './ui/Modal';
 import { Input } from './ui/Input';
 import { Button } from './ui/Button';
-import { Search, User as UserIcon, Check, Fingerprint } from 'lucide-react';
+import { Search, User as UserIcon, Check, Fingerprint, Plus, Trash2, Target as TargetIcon } from 'lucide-react';
 import { calculateKPIStatus } from '../utils/calculationEngine';
 
 interface KPIModalProps {
@@ -30,7 +30,16 @@ const initialKPI: KPI = {
   frequency: 'Mensal',
   category: 'Produtividade',
   ownerId: '',
-  status: 'Ativo'
+  weight: 0,
+  status: 'Ativo',
+  scoringType: 'Binary',
+  travaZero: 70,
+  scoringRanges: [
+    { min: 0, max: 80, points: 0 },
+    { min: 80, max: 100, points: 50 },
+    { min: 100, max: 999, points: 100 }
+  ],
+  rules: []
 };
 
 export const KPIModal = ({ 
@@ -45,7 +54,13 @@ export const KPIModal = ({
 
   useEffect(() => {
     if (initialData) {
-      setFormData(initialData);
+      setFormData({
+        ...initialKPI,
+        ...initialData,
+        scoringType: initialData.scoringType || 'Binary',
+        scoringRanges: initialData.scoringRanges || initialKPI.scoringRanges,
+        rules: initialData.rules || []
+      });
       const owner = users.find(u => u.id === initialData.ownerId);
       if (owner) setOwnerSearch(owner.name);
 
@@ -111,6 +126,27 @@ export const KPIModal = ({
 
   const handleInputChange = (field: keyof KPI, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const addRule = () => {
+    setFormData(prev => ({
+      ...prev,
+      rules: [...(prev.rules || []), { id: crypto.randomUUID(), target: '', comparison: 'GreaterEqual', weight: 0 }]
+    }));
+  };
+
+  const removeRule = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      rules: (prev.rules || []).filter(r => r.id !== id)
+    }));
+  };
+
+  const updateRule = (id: string, field: string, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      rules: (prev.rules || []).map(r => r.id === id ? { ...r, [field]: value } : r)
+    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -327,6 +363,16 @@ export const KPIModal = ({
                 onChange={(e) => handleInputChange('target', parseFloat(e.target.value) || 0)}
               />
               <Input
+                label="Peso"
+                type="number"
+                placeholder="0"
+                value={formData.weight || 0}
+                onChange={(e) => handleInputChange('weight', parseFloat(e.target.value) || 0)}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <Input
                 label="Realizado"
                 type="number"
                 placeholder="0"
@@ -334,6 +380,15 @@ export const KPIModal = ({
                 onChange={(e) => handleInputChange('actual', parseFloat(e.target.value) || 0)}
               />
             </div>
+
+            <Input
+              label="Trava Zero (%)"
+              type="number"
+              placeholder="70"
+              value={formData.travaZero || 0}
+              onChange={(e) => handleInputChange('travaZero', parseFloat(e.target.value) || 0)}
+              description="Abaixo deste percentual de atingimento, a nota será zero."
+            />
 
             <div className="relative flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-700">Dono do Indicador (Responsável)</label>
@@ -389,6 +444,179 @@ export const KPIModal = ({
                   )}
                 </div>
               )}
+            </div>
+
+            <div className="border-t border-gray-100 pt-6 mt-2">
+              <div className="flex items-center gap-2 mb-4">
+                <TargetIcon className="h-5 w-5 text-indigo-600" />
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">Configuração de Pontuação</h3>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-sm font-medium text-gray-700">Tipo de Consolidação</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(['Binary', 'Linear', 'Range', 'Custom'] as any[]).map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleInputChange('scoringType', type)}
+                        className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${
+                          formData.scoringType === (type === 'Custom' ? 'Range' : type) && (type !== 'Custom' || (formData.rules && formData.rules.length > 0))
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
+                            : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                        }`}
+                      >
+                        {type === 'Binary' ? 'Binário' : type === 'Linear' ? 'Linear' : type === 'Range' ? 'Faixas' : 'Regras'}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {formData.scoringType === 'Binary' && '100% ou 0% (Tudo ou nada).'}
+                    {formData.scoringType === 'Linear' && 'Proporcional ao atingimento (ex: 90% meta = 90% nota).'}
+                    {formData.scoringType === 'Range' && 'Define faixas customizadas de pontuação ou regras específicas.'}
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Regras Customizadas</span>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-7 text-[10px] gap-1 text-indigo-600"
+                      onClick={addRule}
+                    >
+                      <Plus className="h-3 w-3" /> Add Regra
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(formData.rules || []).map((rule) => (
+                      <div key={rule.id} className="flex items-end gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100">
+                        <div className="flex-1 space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400 ml-1">Meta</span>
+                          <Input 
+                            value={rule.target}
+                            onChange={e => updateRule(rule.id, 'target', e.target.value)}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <div className="w-24 space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400 ml-1">Condição</span>
+                          <select 
+                            className="w-full h-8 rounded-md border border-slate-200 bg-white px-1 text-[10px] font-bold outline-none"
+                            value={rule.comparison}
+                            onChange={e => updateRule(rule.id, 'comparison', e.target.value)}
+                          >
+                            <option value="Greater">Maior</option>
+                            <option value="GreaterEqual">Maior/Igual</option>
+                            <option value="Less">Menor</option>
+                            <option value="LessEqual">Menor/Igual</option>
+                            <option value="Equal">Igual</option>
+                          </select>
+                        </div>
+                        <div className="w-16 space-y-1">
+                          <span className="text-[9px] font-bold text-slate-400 ml-1">Pontos</span>
+                          <Input 
+                            type="number"
+                            value={rule.weight}
+                            onChange={e => updateRule(rule.id, 'weight', Number(e.target.value))}
+                            className="h-8 text-xs"
+                          />
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => removeRule(rule.id)}
+                          className="h-8 w-8 flex items-center justify-center rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-50"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {formData.scoringType === 'Range' && (
+                  <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Faixas de Performance (% da Meta)</span>
+                      <Button 
+                        type="button" 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 text-[10px] gap-1"
+                        onClick={() => {
+                          const ranges = formData.scoringRanges || [];
+                          const lastMax = ranges.length > 0 ? ranges[ranges.length - 1].max : 100;
+                          handleInputChange('scoringRanges', [...ranges, { min: lastMax, max: lastMax + 20, points: 100 }]);
+                        }}
+                      >
+                        <Plus className="h-3 w-3" /> Add Faixa
+                      </Button>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      {(formData.scoringRanges || []).map((range, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <div className="grid grid-cols-3 gap-2 flex-1">
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">Min %</span>
+                              <input 
+                                type="number" 
+                                className="h-8 w-full rounded-md border border-slate-200 px-2 text-xs font-bold"
+                                value={range.min}
+                                onChange={(e) => {
+                                  const newRanges = [...(formData.scoringRanges || [])];
+                                  newRanges[idx].min = parseFloat(e.target.value) || 0;
+                                  handleInputChange('scoringRanges', newRanges);
+                                }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">Max %</span>
+                              <input 
+                                type="number" 
+                                className="h-8 w-full rounded-md border border-slate-200 px-2 text-xs font-bold"
+                                value={range.max}
+                                onChange={(e) => {
+                                  const newRanges = [...(formData.scoringRanges || [])];
+                                  newRanges[idx].max = parseFloat(e.target.value) || 0;
+                                  handleInputChange('scoringRanges', newRanges);
+                                }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <span className="text-[9px] font-bold text-slate-400 ml-1">Pontos</span>
+                              <input 
+                                type="number" 
+                                className="h-8 w-full rounded-md border border-slate-200 px-2 text-xs font-bold text-indigo-600"
+                                value={range.points}
+                                onChange={(e) => {
+                                  const newRanges = [...(formData.scoringRanges || [])];
+                                  newRanges[idx].points = parseFloat(e.target.value) || 0;
+                                  handleInputChange('scoringRanges', newRanges);
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <button 
+                            type="button"
+                            className="mt-4 p-1.5 text-slate-300 hover:text-rose-500 transition-colors"
+                            onClick={() => {
+                              const newRanges = (formData.scoringRanges || []).filter((_, i) => i !== idx);
+                              handleInputChange('scoringRanges', newRanges);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

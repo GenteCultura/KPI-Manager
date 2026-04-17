@@ -43,7 +43,10 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
     consolidations: storeConsolidations, 
     inventoryIndicators: storeInventory,
     diretorias: storeDiretorias,
-    teams: storeTeams
+    teams: storeTeams,
+    departamentos: storeDepartamentos,
+    gerencias: storeGerencias,
+    servicos: storeServicos
   } = useStore();
   const kpis = propKpis || storeKpis;
   const users = propUsers || storeUsers;
@@ -53,104 +56,14 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
   const [reportType, setReportType] = useState<ReportType>('KPIs');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedDiretorias, setSelectedDiretorias] = useState<string[]>([]);
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
-  
-  const getColumnsForReport = (type: ReportType) => {
-    switch (type) {
-      case 'KPIs':
-        return [
-          { id: 'code', label: 'Código' },
-          { id: 'name', label: 'Nome' },
-          { id: 'department', label: 'Departamento' },
-          { id: 'responsible', label: 'Responsável' },
-          { id: 'target', label: 'Meta' },
-          { id: 'actual', label: 'Realizado' },
-          { id: 'unit', label: 'Unidade' },
-        ];
-      case 'Users':
-        return [
-          { id: 'name', label: 'Nome' },
-          { id: 'email', label: 'E-mail' },
-          { id: 'department', label: 'Departamento' },
-          { id: 'role', label: 'Cargo' },
-          { id: 'accessLevel', label: 'Nível de Acesso' },
-          { id: 'status', label: 'Status' },
-        ];
-      case 'Consolidations':
-        return [
-          { id: 'collaboratorName', label: 'Colaborador' },
-          { id: 'name', label: 'Nome da Consolidação' },
-          { id: 'month', label: 'Mês de Referência' },
-          { id: 'points', label: 'Pontos' },
-          { id: 'totalTarget', label: 'Meta Total' },
-          { id: 'diretoria', label: 'Diretoria' },
-          { id: 'department', label: 'Departamento' },
-          { id: 'team', label: 'Equipe' },
-          { id: 'createdAt', label: 'Data de Criação' },
-        ];
-      case 'Inventory':
-        return [
-          { id: 'code', label: 'Código' },
-          { id: 'name', label: 'Nome' },
-          { id: 'responsibleName', label: 'Responsável' },
-          { id: 'target', label: 'Meta' },
-          { id: 'weight', label: 'Peso' },
-          { id: 'status', label: 'Status' },
-        ];
-      case 'Results':
-        return [
-          { id: 'code', label: 'Código' },
-          { id: 'name', label: 'Nome do Indicador' },
-          { id: 'collaboratorName', label: 'Colaborador' },
-          { id: 'month', label: 'Mês' },
-          { id: 'target', label: 'Meta' },
-          { id: 'weight', label: 'Peso' },
-          { id: 'actual', label: 'Realizado' },
-          { id: 'achievement', label: 'Atingimento %' },
-          { id: 'diretoria', label: 'Diretoria' },
-          { id: 'department', label: 'Departamento' },
-          { id: 'team', label: 'Equipe' },
-        ];
-      default:
-        return [];
-    }
-  };
+  const [selectedGerencias, setSelectedGerencias] = useState<string[]>([]);
+  const [selectedServicos, setSelectedServicos] = useState<string[]>([]);
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [scopeTab, setScopeTab] = useState<'Diretoria' | 'Departamento' | 'Gerência' | 'Serviço' | 'Equipe'>('Departamento');
 
-  const [selectedColumns, setSelectedColumns] = useState<string[]>(getColumnsForReport('KPIs').map(c => c.id));
-  const [format, setFormat] = useState<'XLSX' | 'CSV' | 'PDF'>('XLSX');
-  const [isExporting, setIsExporting] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [isDone, setIsDone] = useState(false);
-
-  const handleReportTypeChange = (type: ReportType) => {
-    setReportType(type);
-    setSelectedColumns(getColumnsForReport(type).map(c => c.id));
-  };
-
-  const toggleDept = (dept: string) => {
-    if (selectedDepts.includes(dept)) {
-      setSelectedDepts(selectedDepts.filter(d => d !== dept));
-    } else {
-      setSelectedDepts([...selectedDepts, dept]);
-    }
-  };
-
-  const toggleColumn = (id: string) => {
-    if (selectedColumns.includes(id)) {
-      setSelectedColumns(selectedColumns.filter(c => c !== id));
-    } else {
-      setSelectedColumns([...selectedColumns, id]);
-    }
-  };
-
-  const selectAllColumns = () => setSelectedColumns(getColumnsForReport(reportType).map(c => c.id));
-  const deselectAllColumns = () => setSelectedColumns([]);
-
-  const handleExport = () => {
-    setIsExporting(true);
-    setProgress(0);
-    setIsDone(false);
-
+  const getFilteredData = () => {
     let rawData: any[] = [];
     if (reportType === 'KPIs') rawData = kpis;
     else if (reportType === 'Users') rawData = users;
@@ -183,18 +96,121 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
       });
     }
 
-    // Filter data based on selection (department)
-    let dataToExport = rawData.filter(item => {
-      if (reportType === 'KPIs' || reportType === 'Users' || reportType === 'Results' || reportType === 'Consolidations') {
-        const dept = item.department || '';
-        return selectedDepts.length === 0 || selectedDepts.includes(dept);
+    // Filter data based on selection (department and date)
+    return rawData.filter(item => {
+      // Date filtering
+      if (startDate || endDate) {
+        const itemDateStr = item.month || (item.timestamp ? item.timestamp.split('T')[0] : null);
+        if (itemDateStr) {
+          const itemDate = new Date(itemDateStr + (itemDateStr.length === 7 ? '-01' : ''));
+          if (startDate) {
+            const start = new Date(startDate);
+            if (itemDate < start) return false;
+          }
+          if (endDate) {
+            const end = new Date(endDate);
+            if (itemDate > end) return false;
+          }
+        }
+      }
+
+      // Scope filtering (Hierarchical)
+      if (selectedDiretorias.length > 0 || selectedDepts.length > 0 || selectedGerencias.length > 0 || selectedServicos.length > 0 || selectedTeams.length > 0) {
+        const matchesScope = () => {
+          // IDs from item
+          const itmDirId = item.diretoriaId;
+          const itmDeptId = item.departmentId;
+          const itmGerId = item.gerenciaId;
+          const itmServId = item.servicoId;
+          const itmTeamId = item.teamId;
+
+          // 1. Check Diretoria
+          if (selectedDiretorias.length > 0) {
+            if (itmDirId && selectedDiretorias.includes(itmDirId)) return true;
+          }
+
+          // 2. Check Departamento (including children)
+          if (selectedDepts.length > 0) {
+            let deptIdsOfItem = new Set<string>();
+            if (itmDeptId) deptIdsOfItem.add(itmDeptId);
+            if (itmGerId) {
+              const g = storeGerencias.find(sg => sg.id === itmGerId);
+              if (g?.departmentId) deptIdsOfItem.add(g.departmentId);
+            }
+            if (itmServId) {
+              const s = storeServicos.find(ss => ss.id === itmServId);
+              if (s?.gerenciaId) {
+                const g = storeGerencias.find(sg => sg.id === s.gerenciaId);
+                if (g?.departmentId) deptIdsOfItem.add(g.departmentId);
+              }
+            }
+            if (itmTeamId) {
+              const t = storeTeams.find(st => st.id === itmTeamId);
+              if (t?.deptId) deptIdsOfItem.add(t.deptId);
+              if (t?.gerenciaId) {
+                const g = storeGerencias.find(sg => sg.id === t.gerenciaId);
+                if (g?.departmentId) deptIdsOfItem.add(g.departmentId);
+              }
+            }
+            // Check if any of these dept IDs match the selected department names (using backward compatibility or checking matched store items)
+            for (const dId of Array.from(deptIdsOfItem)) {
+              const d = storeDepartamentos.find(sd => sd.id === dId);
+              if (d && selectedDepts.includes(d.name)) return true;
+            }
+          }
+
+          // 3. Check Gerência
+          if (selectedGerencias.length > 0) {
+            let gerIdsOfItem = new Set<string>();
+            if (itmGerId) gerIdsOfItem.add(itmGerId);
+            if (itmServId) {
+              const s = storeServicos.find(ss => ss.id === itmServId);
+              if (s?.gerenciaId) gerIdsOfItem.add(s.gerenciaId);
+            }
+            if (itmTeamId) {
+              const t = storeTeams.find(st => st.id === itmTeamId);
+              if (t?.gerenciaId) gerIdsOfItem.add(t.gerenciaId);
+            }
+            for (const gId of Array.from(gerIdsOfItem)) {
+              const g = storeGerencias.find(sg => sg.id === gId);
+              if (g && selectedGerencias.includes(g.name)) return true;
+            }
+          }
+
+          // 4. Check Serviço
+          if (selectedServicos.length > 0) {
+            let servIdsOfItem = new Set<string>();
+            if (itmServId) servIdsOfItem.add(itmServId);
+            if (itmTeamId) {
+              const t = storeTeams.find(st => st.id === itmTeamId);
+              if (t?.servicoId) servIdsOfItem.add(t.servicoId);
+            }
+            for (const sId of Array.from(servIdsOfItem)) {
+              const s = storeServicos.find(ss => ss.id === sId);
+              if (s && selectedServicos.includes(s.name)) return true;
+            }
+          }
+
+          // 5. Check Equipe
+          if (selectedTeams.length > 0) {
+            if (itmTeamId) {
+              const t = storeTeams.find(st => st.id === itmTeamId);
+              if (t && selectedTeams.includes(t.name)) return true;
+            }
+          }
+
+          return false;
+        };
+
+        if (!matchesScope()) return false;
       }
       return true;
     });
+  };
 
-    // Map data to selected columns
+  const getMappedData = (dataToExport: any[]) => {
     const columns = getColumnsForReport(reportType);
-    const mappedData = dataToExport.map(item => {
+    return dataToExport.map(item => {
       const row: any = {};
       selectedColumns.forEach(colId => {
         const col = columns.find(c => c.id === colId);
@@ -208,6 +224,10 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
           row[col.label] = owner ? owner.name : 'N/A';
         } else if (colId === 'points' && reportType === 'Consolidations') {
           row[col.label] = calculateWeightedAchievement(item);
+        } else if (colId === 'status' && reportType === 'Consolidations') {
+          const score = calculateWeightedAchievement(item);
+          const target = parseFloat(item.totalTarget || '85');
+          row[col.label] = score >= target ? 'Superou/Atingiu' : 'Abaixo da Meta';
         } else if (colId === 'diretoria' && (reportType === 'Consolidations' || reportType === 'Results')) {
           const collaborator = users.find(u => u.id === (item.collaboratorId || item.ownerId));
           row[col.label] = storeDiretorias.find(d => d.id === collaborator?.diretoriaId)?.name || '';
@@ -220,6 +240,143 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
       });
       return row;
     });
+  };
+  
+  const getColumnsForReport = (type: ReportType) => {
+    switch (type) {
+      case 'KPIs':
+        return [
+          { id: 'code', label: 'Código' },
+          { id: 'name', label: 'Nome' },
+          { id: 'department', label: 'Departamento' },
+          { id: 'responsible', label: 'Responsável' },
+          { id: 'target', label: 'Meta' },
+          { id: 'travaZero', label: 'Trava Zero (%)' },
+          { id: 'actual', label: 'Realizado' },
+          { id: 'unit', label: 'Unidade' },
+        ];
+      case 'Users':
+        return [
+          { id: 'name', label: 'Nome' },
+          { id: 'email', label: 'E-mail' },
+          { id: 'department', label: 'Departamento' },
+          { id: 'role', label: 'Cargo' },
+          { id: 'accessLevel', label: 'Nível de Acesso' },
+          { id: 'status', label: 'Status' },
+        ];
+      case 'Consolidations':
+        return [
+          { id: 'collaboratorName', label: 'Colaborador' },
+          { id: 'name', label: 'Nome da Consolidação' },
+          { id: 'month', label: 'Mês de Referência' },
+          { id: 'points', label: 'Pontos' },
+          { id: 'totalTarget', label: 'Meta Total' },
+          { id: 'diretoria', label: 'Diretoria' },
+          { id: 'department', label: 'Departamento' },
+          { id: 'team', label: 'Equipe' },
+          { id: 'status', label: 'Status de Performance' },
+          { id: 'createdAt', label: 'Data de Criação' },
+        ];
+      case 'Inventory':
+        return [
+          { id: 'code', label: 'Código' },
+          { id: 'name', label: 'Nome' },
+          { id: 'responsibleName', label: 'Responsável' },
+          { id: 'target', label: 'Meta' },
+          { id: 'travaZero', label: 'Trava Zero (%)' },
+          { id: 'weight', label: 'Peso' },
+          { id: 'status', label: 'Status' },
+        ];
+      case 'Results':
+        return [
+          { id: 'code', label: 'Código' },
+          { id: 'name', label: 'Nome do Indicador' },
+          { id: 'collaboratorName', label: 'Colaborador' },
+          { id: 'month', label: 'Mês' },
+          { id: 'target', label: 'Meta' },
+          { id: 'travaZero', label: 'Trava Zero (%)' },
+          { id: 'weight', label: 'Peso' },
+          { id: 'actual', label: 'Realizado' },
+          { id: 'achievement', label: 'Atingimento %' },
+          { id: 'diretoria', label: 'Diretoria' },
+          { id: 'department', label: 'Departamento' },
+          { id: 'team', label: 'Equipe' },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(getColumnsForReport('KPIs').map(c => c.id));
+  const [format, setFormat] = useState<'XLSX' | 'CSV' | 'PDF'>('XLSX');
+  const [isExporting, setIsExporting] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isDone, setIsDone] = useState(false);
+
+  const handleReportTypeChange = (type: ReportType) => {
+    setReportType(type);
+    setSelectedColumns(getColumnsForReport(type).map(c => c.id));
+  };
+
+  const toggleDiretoria = (id: string) => {
+    if (selectedDiretorias.includes(id)) {
+      setSelectedDiretorias(selectedDiretorias.filter(d => d !== id));
+    } else {
+      setSelectedDiretorias([...selectedDiretorias, id]);
+    }
+  };
+
+  const toggleDept = (dept: string) => {
+    if (selectedDepts.includes(dept)) {
+      setSelectedDepts(selectedDepts.filter(d => d !== dept));
+    } else {
+      setSelectedDepts([...selectedDepts, dept]);
+    }
+  };
+
+  const toggleGerencia = (name: string) => {
+    if (selectedGerencias.includes(name)) {
+      setSelectedGerencias(selectedGerencias.filter(g => g !== name));
+    } else {
+      setSelectedGerencias([...selectedGerencias, name]);
+    }
+  };
+
+  const toggleServico = (name: string) => {
+    if (selectedServicos.includes(name)) {
+      setSelectedServicos(selectedServicos.filter(s => s !== name));
+    } else {
+      setSelectedServicos([...selectedServicos, name]);
+    }
+  };
+
+  const toggleTeam = (name: string) => {
+    if (selectedTeams.includes(name)) {
+      setSelectedTeams(selectedTeams.filter(t => t !== name));
+    } else {
+      setSelectedTeams([...selectedTeams, name]);
+    }
+  };
+
+  const toggleColumn = (id: string) => {
+    if (selectedColumns.includes(id)) {
+      setSelectedColumns(selectedColumns.filter(c => c !== id));
+    } else {
+      setSelectedColumns([...selectedColumns, id]);
+    }
+  };
+
+  const selectAllColumns = () => setSelectedColumns(getColumnsForReport(reportType).map(c => c.id));
+  const deselectAllColumns = () => setSelectedColumns([]);
+
+  const handleExport = () => {
+    setIsExporting(true);
+    setProgress(0);
+    setIsDone(false);
+
+    const dataToExport = getFilteredData();
+    const mappedData = getMappedData(dataToExport);
+    const columns = getColumnsForReport(reportType);
 
     const interval = setInterval(() => {
       setProgress(prev => {
@@ -292,16 +449,16 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
   };
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-10 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-600 text-white shadow-xl shadow-indigo-200 ring-4 ring-indigo-50">
-            <Download className="h-8 w-8" />
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
+            <FileText className="h-7 w-7 stroke-[1.5]" />
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Central de Exportação</h1>
-            <p className="text-slate-500 font-medium">Gere relatórios personalizados em múltiplos formatos.</p>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Relatórios</h1>
+            <p className="text-slate-400 text-[10px] font-light tracking-widest mt-1 uppercase">Gere relatórios personalizados em múltiplos formatos.</p>
           </div>
         </div>
       </div>
@@ -315,29 +472,29 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
               { id: 2, label: 'Período', icon: Calendar },
               { id: 3, label: 'Escopo', icon: Filter },
               { id: 4, label: 'Colunas', icon: CheckSquare },
-              { id: 5, label: 'Formato', icon: Download },
+              { id: 5, label: 'Visualizar & Formato', icon: Download },
             ].map((s) => (
               <button
                 key={s.id}
                 onClick={() => !isExporting && setStep(s.id)}
                 className={`flex items-center gap-4 rounded-2xl p-5 transition-all duration-300 ${
                   step === s.id
-                    ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-200 ring-4 ring-indigo-50'
+                    ? 'bg-slate-800 text-white shadow-xl'
                     : step > s.id
                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                    : 'bg-white text-slate-400 border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30'
+                    : 'bg-white text-slate-400 border border-slate-100 hover:border-slate-200 hover:bg-slate-50/30'
                 }`}
               >
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-black ${
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold ${
                   step === s.id ? 'bg-white/20' : step > s.id ? 'bg-emerald-100' : 'bg-slate-100'
                 }`}>
                   {step > s.id ? <CheckCircle2 className="h-5 w-5" /> : <s.icon className="h-5 w-5" />}
                 </div>
                 <div className="flex flex-col items-start">
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-60">Passo {s.id}</span>
-                  <span className="font-bold">{s.label}</span>
+                  <span className="text-[9px] font-medium uppercase tracking-widest opacity-60">Passo {s.id}</span>
+                  <span className="text-xs font-bold uppercase tracking-wider">{s.label}</span>
                 </div>
-                {step === s.id && <ChevronRight className="ml-auto h-5 w-5 opacity-60" />}
+                {step === s.id && <ChevronRight className="ml-auto h-4 w-4 opacity-60" />}
               </button>
             ))}
           </nav>
@@ -361,7 +518,7 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {[
-                      { id: 'KPIs', label: 'Lista de Indicadores', desc: 'Metas, realizados e unidades' },
+                      { id: 'KPIs', label: 'Lista de Estrutura', desc: 'Metas, realizados e unidades' },
                       { id: 'Users', label: 'Lista de Usuários', desc: 'Cargos, departamentos e acessos' },
                       { id: 'Consolidations', label: 'Consolidações', desc: 'Resultados finais por colaborador' },
                       { id: 'Inventory', label: 'Inventário', desc: 'Indicadores em planejamento' },
@@ -429,30 +586,109 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
                 >
                   <div className="space-y-2">
                     <h3 className="text-2xl font-black text-slate-900">Filtro de Escopo</h3>
-                    <p className="text-slate-500 font-medium leading-relaxed">Selecione quais departamentos devem ser incluídos no relatório.</p>
+                    <p className="text-slate-500 font-medium leading-relaxed">Selecione quais unidades organizacionais devem ser incluídas no relatório.</p>
                   </div>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {DEPARTMENTS.map((dept) => (
-                      <button
-                        key={dept}
-                        onClick={() => toggleDept(dept)}
-                        className={`flex items-center justify-center rounded-2xl border p-5 text-xs font-black uppercase tracking-widest transition-all duration-300 ${
-                          selectedDepts.includes(dept)
-                            ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                            : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
-                        }`}
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-1 rounded-2xl bg-slate-100/50 p-1.5 border border-slate-200/40">
+                      {['Diretoria', 'Departamento', 'Gerência', 'Serviço', 'Equipe'].map((tab) => (
+                        <button
+                          key={tab}
+                          onClick={() => setScopeTab(tab as any)}
+                          className={`flex-1 whitespace-nowrap rounded-xl px-4 py-2 text-[9px] font-black uppercase tracking-[0.15em] transition-all ${
+                            scopeTab === tab 
+                              ? 'bg-white text-slate-800 shadow-sm border border-slate-200/50' 
+                              : 'text-slate-400 hover:text-slate-600 hover:bg-white/40'
+                          }`}
+                        >
+                          {tab}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {scopeTab === 'Diretoria' && storeDiretorias.map((d) => (
+                        <button
+                          key={d.id}
+                          onClick={() => toggleDiretoria(d.id)}
+                          className={`flex items-center justify-center rounded-2xl border p-5 text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                            selectedDiretorias.includes(d.id)
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                              : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
+                          }`}
+                        >
+                          {d.name}
+                        </button>
+                      ))}
+                      {scopeTab === 'Departamento' && storeDepartamentos.map((dept) => (
+                        <button
+                          key={dept.id}
+                          onClick={() => toggleDept(dept.name)}
+                          className={`flex items-center justify-center rounded-2xl border p-5 text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                            selectedDepts.includes(dept.name)
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                              : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
+                          }`}
+                        >
+                          {dept.name}
+                        </button>
+                      ))}
+                      {scopeTab === 'Gerência' && storeGerencias.map((g) => (
+                        <button
+                          key={g.id}
+                          onClick={() => toggleGerencia(g.name)}
+                          className={`flex items-center justify-center rounded-2xl border p-5 text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                            selectedGerencias.includes(g.name)
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                              : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
+                          }`}
+                        >
+                          {g.name}
+                        </button>
+                      ))}
+                      {scopeTab === 'Serviço' && storeServicos.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleServico(s.name)}
+                          className={`flex items-center justify-center rounded-2xl border p-5 text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                            selectedServicos.includes(s.name)
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                              : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                      {scopeTab === 'Equipe' && storeTeams.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => toggleTeam(t.name)}
+                          className={`flex items-center justify-center rounded-2xl border p-5 text-xs font-black uppercase tracking-widest transition-all duration-300 ${
+                            selectedTeams.includes(t.name)
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+                              : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
+                          }`}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-4 pt-4 border-t border-slate-50">
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setSelectedDiretorias([]);
+                          setSelectedDepts([]);
+                          setSelectedGerencias([]);
+                          setSelectedServicos([]);
+                          setSelectedTeams([]);
+                        }}
+                        className="text-rose-600 font-black uppercase tracking-widest text-[10px] hover:bg-rose-50"
                       >
-                        {dept}
-                      </button>
-                    ))}
+                        Limpar Todos os Filtros
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setSelectedDepts(selectedDepts.length === DEPARTMENTS.length ? [] : [...DEPARTMENTS])}
-                    className="text-indigo-600 font-black uppercase tracking-widest text-[10px] hover:bg-indigo-50"
-                  >
-                    {selectedDepts.length === DEPARTMENTS.length ? 'Desmarcar Todos' : 'Selecionar Todos os Departamentos'}
-                  </Button>
                 </motion.div>
               )}
 
@@ -508,84 +744,135 @@ export const ExportCenter = ({ kpis: propKpis, users: propUsers, consolidations:
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="space-y-10"
+                  className="space-y-8"
                 >
                   <div className="space-y-2">
-                    <h3 className="text-2xl font-black text-slate-900">Formato do Arquivo</h3>
-                    <p className="text-slate-500 font-medium leading-relaxed">Escolha como deseja receber os dados consolidados.</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    {[
-                      { id: 'XLSX', label: 'Excel (.xlsx)', desc: 'Ideal para análise de dados' },
-                      { id: 'CSV', label: 'CSV (.csv)', desc: 'Formato leve e universal' },
-                      { id: 'PDF', label: 'PDF (.pdf)', desc: 'Relatório visual pronto' },
-                    ].map((f) => (
-                      <label
-                        key={f.id}
-                        className={`flex cursor-pointer flex-col gap-3 rounded-3xl border p-8 transition-all duration-300 ${
-                          format === f.id
-                            ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-600 shadow-lg shadow-indigo-100'
-                            : 'border-slate-100 bg-slate-50/50 hover:border-indigo-200 hover:bg-white hover:shadow-xl hover:shadow-slate-200/40'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="format"
-                          className="sr-only"
-                          checked={format === f.id}
-                          onChange={() => setFormat(f.id as any)}
-                        />
-                        <span className="text-lg font-black text-slate-900">{f.label}</span>
-                        <span className="text-xs font-medium text-slate-500 leading-relaxed">{f.desc}</span>
-                      </label>
-                    ))}
+                    <h3 className="text-2xl font-black text-slate-900">Prévia do Relatório</h3>
+                    <p className="text-slate-500 font-medium leading-relaxed">Confira os dados antes de gerar o arquivo final.</p>
                   </div>
 
-                  <div className="pt-6">
-                    {!isExporting && !isDone && (
-                      <Button onClick={handleExport} className="w-full !h-20 gap-3 !rounded-3xl text-xl font-black shadow-2xl shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                        <Download className="h-7 w-7" />
-                        Gerar Arquivo Agora
-                      </Button>
-                    )}
+                  {/* Preview Table */}
+                  <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+                    <div className="max-h-[300px] overflow-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 bg-slate-50 font-bold uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                          <tr>
+                            {selectedColumns.map(colId => (
+                              <th key={colId} className="px-4 py-3 whitespace-nowrap">
+                                {getColumnsForReport(reportType).find(c => c.id === colId)?.label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {getMappedData(getFilteredData()).slice(0, 10).map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                              {Object.values(row).map((val: any, vIdx) => (
+                                <td key={vIdx} className="px-4 py-3 whitespace-nowrap text-slate-600 font-medium">
+                                  {val}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                          {getFilteredData().length > 10 && (
+                            <tr>
+                              <td colSpan={selectedColumns.length} className="px-4 py-3 text-center text-[10px] text-slate-400 italic">
+                                Mostrando apenas as primeiras 10 de {getFilteredData().length} linhas...
+                              </td>
+                            </tr>
+                          )}
+                          {getFilteredData().length === 0 && (
+                            <tr>
+                              <td colSpan={selectedColumns.length} className="px-4 py-8 text-center text-slate-400">
+                                Nenhum dado encontrado para os filtros selecionados.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
 
-                    {isExporting && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2 font-medium text-indigo-600">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Consolidando dados...
-                          </span>
-                          <span className="font-bold text-gray-900">{progress}%</span>
-                        </div>
-                        <div className="h-3 w-full overflow-hidden rounded-full bg-gray-100">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${progress}%` }}
-                            className="h-full bg-indigo-600"
-                          />
-                        </div>
+                  <div className="space-y-6 pt-6 border-t border-slate-50">
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-black text-slate-900 uppercase tracking-widest">Escolha o Formato</h4>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        {[
+                          { id: 'XLSX', label: 'Excel (.xlsx)' },
+                          { id: 'CSV', label: 'CSV (.csv)' },
+                          { id: 'PDF', label: 'PDF (.pdf)' },
+                        ].map((f) => (
+                          <label
+                            key={f.id}
+                            className={`flex cursor-pointer items-center justify-center rounded-xl border p-4 text-xs font-black tracking-widest transition-all duration-300 ${
+                              format === f.id
+                                ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-100 italic'
+                                : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:bg-white'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="format"
+                              className="sr-only"
+                              checked={format === f.id}
+                              onChange={() => setFormat(f.id as any)}
+                            />
+                            {f.label}
+                          </label>
+                        ))}
                       </div>
-                    )}
+                    </div>
 
-                    {isDone && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="flex flex-col items-center gap-4 rounded-2xl bg-emerald-50 p-8 text-center border border-emerald-100"
-                      >
-                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                          <CheckCircle2 className="h-10 w-10" />
-                        </div>
-                        <div>
-                          <h4 className="text-lg font-bold text-emerald-900">Download concluído com sucesso!</h4>
-                          <p className="text-sm text-emerald-700">Seu arquivo <span className="font-bold">{format}</span> já está disponível na sua pasta de downloads.</p>
-                        </div>
-                        <Button variant="outline" onClick={() => setIsDone(false)} className="mt-2 border-emerald-200 text-emerald-700 hover:bg-emerald-100">
-                          Gerar Novo Relatório
+                    <div className="pt-4">
+                      {!isExporting && !isDone && (
+                        <Button 
+                          onClick={handleExport} 
+                          disabled={getFilteredData().length === 0}
+                          className="w-full !h-20 gap-3 !rounded-3xl text-xl font-black shadow-2xl shadow-indigo-200 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                          <Download className="h-7 w-7" />
+                          Gerar Relatório Agora
                         </Button>
-                      </motion.div>
-                    )}
+                      )}
+
+                      {isExporting && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center gap-2 font-medium text-indigo-600 text-xs">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Processando relatório...
+                            </span>
+                            <span className="font-bold text-slate-900">{progress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${progress}%` }}
+                              className="h-full bg-indigo-600"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {isDone && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="flex flex-col items-center gap-4 rounded-[2rem] bg-emerald-50 p-10 text-center border border-emerald-100"
+                        >
+                          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                            <CheckCircle2 className="h-10 w-10" />
+                          </div>
+                          <div className="space-y-2">
+                            <h4 className="text-xl font-black text-emerald-900 uppercase tracking-widest">Sucesso!</h4>
+                            <p className="text-xs text-emerald-700 font-medium">Seu relatório em <span className="font-black underline">{format}</span> foi gerado com sucesso.</p>
+                          </div>
+                          <Button variant="outline" onClick={() => setIsDone(false)} className="mt-4 border-emerald-200 text-emerald-700 hover:bg-emerald-100 rounded-2xl h-12 uppercase tracking-widest text-[10px] font-black">
+                            Criar Outro Relatório
+                          </Button>
+                        </motion.div>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               )}

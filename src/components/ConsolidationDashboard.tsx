@@ -1,12 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+import { PieChart, Pie, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   LineChart, Line, ComposedChart, Area, Cell
 } from 'recharts';
-import { Filter, Calendar, Layout, Users, TrendingUp, Target, Award, ChevronDown, Search } from 'lucide-react';
+import { Filter, Calendar, Layout, Users, TrendingUp, Target, Award, ChevronDown, Search, PieChart as PieIcon } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { User, ConsolidatedIndicator, Diretoria, Departamento, Team } from '../types';
-import { calculateWeightedAchievement } from '../utils/calculationEngine';
+import { calculateWeightedAchievement, calculateKPIStatus } from '../utils/calculationEngine';
 import { Input } from './ui/Input';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -18,18 +17,20 @@ interface ConsolidationDashboardProps {
 }
 
 export const ConsolidationDashboard = ({ currentUser, isLoading = false }: ConsolidationDashboardProps) => {
-  const { consolidations, diretorias, departamentos, teams, users } = useStore();
+  const { consolidations, diretorias, departamentos, gerencias, servicos, teams, users } = useStore();
   
   // Filters
   const [monthFilter, setMonthFilter] = useState('');
   const [diretoriaFilter, setDiretoriaFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [gerenciaFilter, setGerenciaFilter] = useState('');
+  const [servicoFilter, setServicoFilter] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
   const [collaboratorFilter, setCollaboratorFilter] = useState('');
 
   // RBAC Filtering
   const filteredConsolidations = useMemo(() => {
-    return consolidations.filter(c => {
+    const filtered = consolidations.filter(c => {
       // RBAC: onlyOwnIndicators
       if (currentUser?.permissions?.onlyOwnIndicators && c.collaboratorId !== currentUser.id) {
         return false;
@@ -49,11 +50,25 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
       const matchesMonth = !monthFilter || c.month === monthFilter;
       const matchesDiretoria = !diretoriaFilter || c.diretoriaId === diretoriaFilter;
       const matchesDept = !deptFilter || c.departmentId === deptFilter;
+      const matchesGerencia = !gerenciaFilter || c.gerenciaId === gerenciaFilter;
+      const matchesServico = !servicoFilter || c.servicoId === servicoFilter;
       const matchesTeam = !teamFilter || c.teamId === teamFilter;
       const matchesCollaborator = !collaboratorFilter || c.collaboratorId === collaboratorFilter;
 
-      return matchesMonth && matchesDiretoria && matchesDept && matchesTeam && matchesCollaborator;
+      return matchesMonth && matchesDiretoria && matchesDept && matchesGerencia && matchesServico && matchesTeam && matchesCollaborator;
     });
+
+    // Group by collaborator + month and take the most recent one
+    const latestByCollabMonth = new Map<string, ConsolidatedIndicator>();
+    
+    [...filtered]
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+      .forEach(c => {
+        const key = `${c.collaboratorId}_${c.month}`;
+        latestByCollabMonth.set(key, c);
+      });
+      
+    return Array.from(latestByCollabMonth.values());
   }, [consolidations, currentUser, monthFilter, diretoriaFilter, deptFilter, teamFilter, collaboratorFilter]);
 
   // Chart Data: Evolution over months
@@ -67,7 +82,7 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
       
       return {
         month: m,
-        score: Math.round(avgScore * 10) / 10,
+        score: Math.round(avgScore * 100) / 100,
         count: monthConsolidations.length
       };
     });
@@ -83,7 +98,7 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
       
       return {
         name: d.name,
-        score: Math.round(avgScore * 10) / 10,
+        score: Math.round(avgScore * 100) / 100,
         count: areaConsolidations.length
       };
     }).filter(d => d.count > 0);
@@ -99,11 +114,39 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
       
       return {
         name: t.name,
-        score: Math.round(avgScore * 10) / 10,
+        score: Math.round(avgScore * 100) / 100,
         count: teamConsolidations.length
       };
     }).filter(t => t.count > 0);
   }, [filteredConsolidations, teams]);
+
+  // Chart Data: Status distribution of all indicators within consolidations
+  const kpiStatusData = useMemo(() => {
+    const statusCounts: Record<string, number> = {
+      'Superou a Meta': 0,
+      'Atingiu a Meta': 0,
+      'Abaixo da Meta': 0,
+    };
+
+    filteredConsolidations.forEach(c => {
+      c.indicators.forEach(ind => {
+        const status = calculateKPIStatus(ind.actual, ind.target, ind.polarity || 'Cima');
+        if (statusCounts[status] !== undefined) {
+          statusCounts[status]++;
+        }
+      });
+    });
+
+    return Object.entries(statusCounts)
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0);
+  }, [filteredConsolidations]);
+
+  const STATUS_COLORS: Record<string, string> = {
+    'Superou a Meta': '#10b981',
+    'Atingiu a Meta': '#f59e0b',
+    'Abaixo da Meta': '#ef4444',
+  };
 
   const IDC_TARGET = 85;
 
@@ -117,7 +160,7 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
     const aboveTarget = scores.filter(s => s >= IDC_TARGET).length;
     
     return {
-      avg: Math.round(avgScore * 10) / 10,
+      avg: Math.round(avgScore * 100) / 100,
       total: filteredConsolidations.length,
       aboveTarget,
       percentAbove: filteredConsolidations.length > 0 ? Math.round((aboveTarget / filteredConsolidations.length) * 100) : 0
@@ -125,30 +168,43 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
   }, [filteredConsolidations]);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-10 pb-12">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
+            <TrendingUp className="h-7 w-7 stroke-[1.5]" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Consolidação</h1>
+            <p className="text-slate-400 text-[10px] font-light tracking-widest mt-1 uppercase">Visão geral de performance e atingimento de metas.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Filters Bar */}
-      <div className="card-base p-6">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 rounded-xl border border-indigo-100">
-            <Filter className="h-4 w-4 text-indigo-600" />
-            <span className="text-sm font-bold text-indigo-700">Filtros do Dashboard</span>
+      <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex items-center gap-2.5 text-slate-400">
+            <Filter className="h-4 w-4" />
+            <span className="text-[10px] font-medium uppercase tracking-[0.15em]">Filtros</span>
           </div>
           
-          <div className="flex flex-wrap gap-3 flex-1">
-            <div className="relative min-w-[150px]">
-              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <div className="flex flex-wrap gap-4 flex-1">
+            <div className="relative min-w-[160px]">
+              <Calendar className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
               <Input 
                 type="month"
-                className="pl-10 !h-10 !rounded-xl text-sm"
+                className="h-10 pl-11 !rounded-xl border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all"
                 value={monthFilter}
                 onChange={(e) => setMonthFilter(e.target.value)}
               />
             </div>
 
-            <div className="relative min-w-[180px]">
-              <Layout className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div className="relative min-w-[200px]">
+              <Layout className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
               <select 
-                className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none appearance-none"
+                className="w-full h-10 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none"
                 value={diretoriaFilter}
                 onChange={(e) => setDiretoriaFilter(e.target.value)}
               >
@@ -157,26 +213,85 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
                   <option key={d.id} value={d.id}>{d.name}</option>
                 ))}
               </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
 
-            <div className="relative min-w-[180px]">
-              <Users className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div className="relative min-w-[200px]">
+              <Layout className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
               <select 
-                className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none appearance-none"
+                className="w-full h-10 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none"
+                value={deptFilter}
+                onChange={(e) => setDeptFilter(e.target.value)}
+              >
+                <option value="">Todos os Departamentos</option>
+                {departamentos
+                  .filter(d => !diretoriaFilter || d.diretoriaId === diretoriaFilter)
+                  .map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300 pointer-events-none" />
+            </div>
+
+            <div className="relative min-w-[200px]">
+              <Layout className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+              <select 
+                className="w-full h-10 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none"
+                value={gerenciaFilter}
+                onChange={(e) => setGerenciaFilter(e.target.value)}
+              >
+                <option value="">Todas as Gerências</option>
+                {gerencias
+                  .filter(g => !deptFilter || g.departmentId === deptFilter)
+                  .map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300 pointer-events-none" />
+            </div>
+
+            <div className="relative min-w-[200px]">
+              <Layout className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+              <select 
+                className="w-full h-10 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none"
+                value={servicoFilter}
+                onChange={(e) => setServicoFilter(e.target.value)}
+              >
+                <option value="">Todos os Serviços</option>
+                {servicos
+                  .filter(s => !gerenciaFilter || s.gerenciaId === gerenciaFilter)
+                  .map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300 pointer-events-none" />
+            </div>
+
+            <div className="relative min-w-[200px]">
+              <Users className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+              <select 
+                className="w-full h-10 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none"
                 value={teamFilter}
                 onChange={(e) => setTeamFilter(e.target.value)}
               >
                 <option value="">Todos os Times</option>
-                {teams.map(t => (
+                {teams
+                  .filter(t => {
+                    if (servicoFilter) return t.servicoId === servicoFilter;
+                    if (gerenciaFilter) return t.gerenciaId === gerenciaFilter;
+                    return true;
+                  })
+                  .map(t => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
 
-            <div className="relative min-w-[180px]">
-              <Users className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div className="relative min-w-[200px]">
+              <Users className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
               <select 
-                className="w-full h-10 pl-10 pr-4 rounded-xl border border-slate-200 bg-white text-sm font-medium focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none appearance-none disabled:bg-slate-50 disabled:text-slate-400"
+                className="w-full h-10 pl-11 pr-4 rounded-xl border border-slate-200 bg-slate-50/30 text-[10px] font-medium uppercase tracking-wider text-slate-600 focus:border-slate-400 focus:outline-none transition-all appearance-none disabled:bg-slate-50/50 disabled:text-slate-300"
                 value={currentUser?.permissions?.onlyOwnIndicators ? currentUser.id : collaboratorFilter}
                 onChange={(e) => setCollaboratorFilter(e.target.value)}
                 disabled={currentUser?.permissions?.onlyOwnIndicators}
@@ -186,19 +301,23 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
                   <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>
+              <ChevronDown className="absolute right-4 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-300 pointer-events-none" />
             </div>
 
-            {(monthFilter || diretoriaFilter || teamFilter || collaboratorFilter) && (
+            {(monthFilter || diretoriaFilter || deptFilter || gerenciaFilter || servicoFilter || teamFilter || collaboratorFilter) && (
               <button 
                 onClick={() => {
                   setMonthFilter('');
                   setDiretoriaFilter('');
+                  setDeptFilter('');
+                  setGerenciaFilter('');
+                  setServicoFilter('');
                   setTeamFilter('');
                   setCollaboratorFilter('');
                 }}
-                className="text-xs font-bold text-indigo-600 hover:text-indigo-700 underline underline-offset-4"
+                className="text-[10px] font-medium text-slate-400 uppercase tracking-widest hover:text-slate-800 transition-all"
               >
-                Limpar Filtros
+                Limpar
               </button>
             )}
           </div>
@@ -207,74 +326,74 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="card-base p-6 bg-gradient-to-br from-indigo-600 to-indigo-700 text-white border-none shadow-indigo-200">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-white/20 rounded-lg">
+        <div className="rounded-2xl border border-slate-800 bg-slate-800 p-8 text-white shadow-xl">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-white/10 rounded-xl">
               <TrendingUp className="h-5 w-5" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">Média Geral</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] opacity-50">Média Geral</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter">{stats.avg}</span>
-            <span className="text-xs font-medium opacity-80 mt-1">Pontuação média consolidada</span>
+            <span className="text-3xl font-normal tracking-tight">{stats.avg} pts</span>
+            <span className="text-[9px] font-light opacity-40 mt-2 uppercase tracking-[0.2em]">Desempenho consolidado</span>
           </div>
         </div>
 
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-emerald-50 rounded-lg">
-              <Target className="h-5 w-5 text-emerald-600" />
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <Target className="h-5 w-5 text-slate-400" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Meta Batida</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400">Meta Batida</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter text-slate-900">{stats.percentAbove}%</span>
-            <span className="text-xs font-medium text-slate-500 mt-1">{stats.aboveTarget} de {stats.total} colaboradores</span>
+            <span className="text-3xl font-normal tracking-tight text-slate-800">{stats.percentAbove}%</span>
+            <span className="text-[9px] font-light text-slate-400 mt-2 uppercase tracking-[0.2em]">{stats.aboveTarget} de {stats.total} colaboradores</span>
           </div>
         </div>
 
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-amber-50 rounded-lg">
-              <Award className="h-5 w-5 text-amber-600" />
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <Award className="h-5 w-5 text-slate-400" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Consolidado</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400">Total Consolidado</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter text-slate-900">{stats.total}</span>
-            <span className="text-xs font-medium text-slate-500 mt-1">Índices processados no período</span>
+            <span className="text-3xl font-normal tracking-tight text-slate-800">{stats.total}</span>
+            <span className="text-[9px] font-light text-slate-400 mt-2 uppercase tracking-[0.2em]">Índices processados</span>
           </div>
         </div>
 
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-2 bg-indigo-50 rounded-lg">
-              <Users className="h-5 w-5 text-indigo-600" />
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-6">
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <Users className="h-5 w-5 text-slate-400" />
             </div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Abrangência</span>
+            <span className="text-[9px] font-medium uppercase tracking-[0.2em] text-slate-400">Abrangência</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-3xl font-black tracking-tighter text-slate-900">{diretoriaData.length}</span>
-            <span className="text-xs font-medium text-slate-500 mt-1">Diretorias com resultados</span>
+            <span className="text-3xl font-normal tracking-tight text-slate-800">{diretoriaData.length}</span>
+            <span className="text-[9px] font-light text-slate-400 mt-2 uppercase tracking-[0.2em]">Diretorias com resultados</span>
           </div>
         </div>
       </div>
 
       {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Evolution Chart */}
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-8">
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-10">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Evolução Mensal</h3>
-              <p className="text-xs text-slate-500">Média de desempenho ao longo do tempo</p>
+              <h3 className="text-sm font-medium text-slate-800 uppercase tracking-[0.15em]">Evolução Mensal</h3>
+              <p className="text-[10px] font-light text-slate-400 mt-1 uppercase tracking-widest">Média de desempenho ao longo do tempo</p>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-3 rounded-full bg-indigo-600" />
-              <span className="text-[10px] font-bold text-slate-500 uppercase">Score Médio</span>
+            <div className="flex items-center gap-3">
+              <div className="h-2 w-2 rounded-full bg-slate-800" />
+              <span className="text-[9px] font-medium text-slate-400 uppercase tracking-widest">Score Médio</span>
             </div>
           </div>
-          <div className="h-[400px] w-full">
+          <div className="h-[350px] w-full">
             {isLoading ? (
               <ChartSkeleton />
             ) : (
@@ -285,27 +404,28 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
                     dataKey="month" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }}
-                    dy={10}
+                    tick={{ fontSize: 9, fontWeight: 400, fill: '#94a3b8' }}
+                    dy={15}
                   />
                   <YAxis 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }}
+                    tick={{ fontSize: 9, fontWeight: 400, fill: '#94a3b8' }}
                     domain={[0, 120]}
                   />
                   <Tooltip 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}
+                    formatter={(value: any) => [`${value} pts`, 'Pontuação']}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontSize: '10px' }}
+                    labelStyle={{ fontWeight: 600, color: '#1e293b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}
                   />
-                  <Area type="monotone" dataKey="score" fill="#4f46e5" fillOpacity={0.1} stroke="none" isAnimationActive={false} />
+                  <Area type="monotone" dataKey="score" fill="#1e293b" fillOpacity={0.03} stroke="none" isAnimationActive={false} />
                   <Line 
                     type="monotone" 
                     dataKey="score" 
-                    stroke="#4f46e5" 
-                    strokeWidth={3} 
-                    dot={{ r: 4, fill: '#4f46e5', strokeWidth: 2, stroke: '#fff' }}
-                    activeDot={{ r: 6, strokeWidth: 0 }}
+                    stroke="#1e293b" 
+                    strokeWidth={2} 
+                    dot={{ r: 3, fill: '#1e293b', strokeWidth: 2, stroke: '#fff' }}
+                    activeDot={{ r: 5, strokeWidth: 0 }}
                     isAnimationActive={false}
                   />
                 </ComposedChart>
@@ -315,14 +435,14 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
         </div>
 
         {/* Performance by Diretoria */}
-        <div className="card-base p-6">
-          <div className="flex items-center justify-between mb-8">
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-10">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Ranking por Diretoria</h3>
-              <p className="text-xs text-slate-500">Comparativo de resultados entre áreas</p>
+              <h3 className="text-sm font-medium text-slate-800 uppercase tracking-[0.15em]">Ranking por Diretoria</h3>
+              <p className="text-[10px] font-light text-slate-400 mt-1 uppercase tracking-widest">Comparativo de resultados entre áreas</p>
             </div>
           </div>
-          <div className="h-[400px] w-full">
+          <div className="h-[350px] w-full">
             {isLoading ? (
               <ChartSkeleton />
             ) : (
@@ -335,22 +455,23 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
                     type="category" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }}
+                    tick={{ fontSize: 9, fontWeight: 400, fill: '#94a3b8' }}
                     width={100}
                   />
                   <Tooltip 
+                    formatter={(value: any) => [`${value} pts`, 'Pontuação']}
                     cursor={{ fill: '#f8fafc' }}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontSize: '10px' }}
                   />
                   <Bar 
                     dataKey="score" 
-                    fill="#4f46e5" 
+                    fill="#1e293b" 
                     radius={[0, 4, 4, 0]} 
-                    barSize={20}
+                    barSize={16}
                     isAnimationActive={false}
                   >
                     {diretoriaData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.score > IDC_TARGET ? '#10b981' : entry.score === IDC_TARGET ? '#f59e0b' : '#ef4444'} />
+                      <Cell key={`cell-${index}`} fill={entry.score > IDC_TARGET ? '#10b981' : entry.score === IDC_TARGET ? '#f59e0b' : '#ef4444'} fillOpacity={0.8} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -360,14 +481,14 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
         </div>
 
         {/* Performance by Team */}
-        <div className="card-base p-6 lg:col-span-2">
-          <div className="flex items-center justify-between mb-8">
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-10">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Desempenho por Time</h3>
-              <p className="text-xs text-slate-500">Visão detalhada por equipes de trabalho</p>
+              <h3 className="text-sm font-medium text-slate-800 uppercase tracking-[0.15em]">Desempenho por Time</h3>
+              <p className="text-[10px] font-light text-slate-400 mt-1 uppercase tracking-widest">Visão detalhada por equipes de trabalho</p>
             </div>
           </div>
-          <div className="h-[400px] w-full">
+          <div className="h-[350px] w-full">
             {isLoading ? (
               <ChartSkeleton />
             ) : (
@@ -378,26 +499,81 @@ export const ConsolidationDashboard = ({ currentUser, isLoading = false }: Conso
                     dataKey="name" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }}
-                    dy={10}
+                    tick={{ fontSize: 9, fontWeight: 400, fill: '#94a3b8' }}
+                    dy={15}
                   />
                   <YAxis 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#64748b' }}
+                    tick={{ fontSize: 9, fontWeight: 400, fill: '#94a3b8' }}
                   />
                   <Tooltip 
+                    formatter={(value: any) => [`${value} pts`, 'Pontuação']}
                     cursor={{ fill: '#f8fafc' }}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontSize: '10px' }}
                   />
                   <Bar 
                     dataKey="score" 
-                    fill="#6366f1" 
+                    fill="#1e293b" 
                     radius={[4, 4, 0, 0]} 
-                    barSize={40}
+                    barSize={32}
                     isAnimationActive={false}
+                    fillOpacity={0.8}
                   />
                 </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Status distribution of KPIs within consolidations */}
+        <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+          <div className="flex items-center justify-between mb-10">
+            <div>
+              <h3 className="text-sm font-medium text-slate-800 uppercase tracking-[0.15em]">Status dos KPIs</h3>
+              <p className="text-[10px] font-light text-slate-400 mt-1 uppercase tracking-widest">Distribuição de atingimento dos indicadores consolidados</p>
+            </div>
+            <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+              <PieIcon className="h-4 w-4 text-slate-400" />
+            </div>
+          </div>
+          <div className="h-[350px] w-full">
+            {isLoading ? (
+              <ChartSkeleton />
+            ) : kpiStatusData.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-4">
+                <div className="h-20 w-20 rounded-full border-2 border-dashed border-slate-100 flex items-center justify-center">
+                  <PieIcon className="h-8 w-8 text-slate-100" />
+                </div>
+                <p className="text-[10px] font-medium text-slate-300 uppercase tracking-widest">Sem dados de indicadores</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" debounce={1}>
+                <PieChart>
+                  <Pie
+                    data={kpiStatusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    isAnimationActive={false}
+                  >
+                    {kpiStatusData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || '#94a3b8'} fillOpacity={0.8} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)', fontSize: '10px' }}
+                  />
+                  <Legend 
+                    verticalAlign="bottom" 
+                    align="center"
+                    iconType="circle"
+                    formatter={(value) => <span className="text-[9px] font-medium text-slate-400 uppercase tracking-widest ml-2">{value}</span>}
+                  />
+                </PieChart>
               </ResponsiveContainer>
             )}
           </div>

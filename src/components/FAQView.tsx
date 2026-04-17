@@ -64,37 +64,37 @@ const FAQItem = ({ question, children, icon }: FAQItemProps) => {
 
 export const FAQView = () => {
   return (
-    <div className="rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 overflow-hidden">
-      <div className="bg-slate-50/50 p-8 border-b border-slate-100">
-        <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-100">
-            <HelpCircle className="h-6 w-6" />
+    <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_2px_4px_rgba(0,0,0,0.02)] overflow-hidden">
+      <div className="bg-slate-50/30 p-8 border-b border-slate-100">
+        <div className="flex items-center gap-5">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-800 text-white shadow-sm ring-1 ring-slate-200">
+            <HelpCircle className="h-7 w-7" />
           </div>
           <div>
-            <h2 className="text-xl font-black text-slate-900">FAQ & Manual Detalhado</h2>
-            <p className="text-sm text-slate-500 font-medium">Guia completo de regras de negócio, cálculos e operação do sistema.</p>
+            <h2 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">FAQ & Manual Detalhado</h2>
+            <p className="text-slate-400 text-sm font-light mt-1">Guia completo de regras de negócio, cálculos e operação do sistema.</p>
           </div>
         </div>
       </div>
 
-      <div className="p-4 max-h-[700px] overflow-y-auto custom-scrollbar">
-        <div className="space-y-2">
+      <div className="p-6 max-h-[700px] overflow-y-auto custom-scrollbar">
+        <div className="space-y-4">
           {/* Regras de Negócio e Cálculos */}
-          <h3 className="px-4 pt-4 text-[10px] font-black uppercase tracking-widest text-indigo-600">Regras de Negócio & Cálculos</h3>
+          <h3 className="px-4 pt-4 text-[10px] font-medium uppercase tracking-[0.15em] text-slate-400">Regras de Negócio & Cálculos</h3>
           
           <FAQItem question="Como é calculado o IDC (Índice de Desempenho)?" icon={<Calculator className="h-4 w-4" />}>
             <p className="mb-2">O IDC é uma <strong>média ponderada</strong> do atingimento de todos os indicadores de um colaborador:</p>
             <ol className="list-decimal pl-5 space-y-2">
               <li><strong>Atingimento Individual:</strong> Calculado comparando o Realizado vs Meta.</li>
-              <li><strong>Peso:</strong> Cada indicador possui um peso (ex: 10%, 20%). A soma dos pesos deve ser sempre 100%.</li>
-              <li><strong>Fórmula:</strong> <code className="bg-slate-100 px-1 rounded">Σ (Atingimento * Peso) / 100</code>.</li>
+              <li><strong>Peso:</strong> Cada indicador possui um peso numérico. A nota final é calculada proporcionalmente à soma total dos pesos.</li>
+              <li><strong>Fórmula:</strong> <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-mono">Σ (Atingimento * Peso) / Σ Pesos</code>.</li>
             </ol>
-            <p className="mt-2 text-xs italic">Nota: O sistema limita o atingimento individual a um teto (geralmente 120%) para evitar distorções extremas na média final.</p>
+            <p className="mt-3 text-[10px] italic text-slate-400">Nota: O sistema limita o atingimento individual a um teto (geralmente 120%) para evitar distorções extremas na média final.</p>
           </FAQItem>
 
           <FAQItem question="O que é a Polaridade (Cima vs Baixo)?" icon={<TrendingUp className="h-4 w-4" />}>
             <p className="mb-2">A polaridade define se o indicador é "melhor quanto maior" ou "melhor quanto menor":</p>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc pl-5 space-y-2">
               <li><strong>Cima (Positiva):</strong> Ex: Vendas, Lucro, Produtividade. Quanto maior o realizado, melhor o score.</li>
               <li><strong>Baixo (Negativa):</strong> Ex: Acidentes, Custos, Reclamações. Quanto menor o realizado, melhor o score.</li>
             </ul>
@@ -102,7 +102,7 @@ export const FAQView = () => {
 
           <FAQItem question="Como funciona a isenção por Férias?" icon={<Info className="h-4 w-4" />}>
             <p>Quando um colaborador é marcado como <strong>"Em Férias"</strong> no mês de referência:</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
+            <ul className="list-disc pl-5 mt-3 space-y-2">
               <li>Sua nota individual não é contabilizada para a média do time/departamento.</li>
               <li>O dashboard exibe um status de "Isento" para este colaborador.</li>
               <li>Isso evita que a ausência de dados de um colaborador em descanso penalize os resultados globais da gerência.</li>
@@ -110,11 +110,11 @@ export const FAQView = () => {
           </FAQItem>
 
           {/* Operação do Sistema */}
-          <h3 className="px-4 pt-6 text-[10px] font-black uppercase tracking-widest text-indigo-600">Operação & Importação</h3>
+          <h3 className="px-4 pt-8 text-[10px] font-medium uppercase tracking-[0.15em] text-slate-400">Operação & Importação</h3>
 
           <FAQItem question="Regras para Importação em Massa (Excel)" icon={<FileSpreadsheet className="h-4 w-4" />}>
             <p className="mb-2">Ao importar dados via Excel, siga estas diretrizes:</p>
-            <ul className="list-disc pl-5 space-y-1">
+            <ul className="list-disc pl-5 space-y-2">
               <li><strong>Colaboradores:</strong> O e-mail é o identificador único. Se o e-mail já existir, os dados serão atualizados.</li>
               <li><strong>Inventário:</strong> O sistema ignora a coluna "Código" no upload e gera IDs automáticos (IND-001, IND-002...) para garantir a integridade da sequência.</li>
               <li><strong>Realizados:</strong> É obrigatório selecionar o "Mês de Referência" antes de processar o arquivo.</li>
@@ -123,16 +123,16 @@ export const FAQView = () => {
 
           <FAQItem question="Como funciona a Trilha de Auditoria?" icon={<History className="h-4 w-4" />}>
             <p>O sistema registra automaticamente:</p>
-            <ul className="list-disc pl-5 mt-2 space-y-1">
+            <ul className="list-disc pl-5 mt-3 space-y-2">
               <li>Quem criou, editou ou excluiu qualquer registro.</li>
               <li>A data e hora exata da alteração.</li>
               <li>O valor antigo e o novo valor (em caso de edições).</li>
             </ul>
-            <p className="mt-2 text-xs">Acesse o ícone de relógio ao lado de qualquer registro para visualizar seu histórico completo.</p>
+            <p className="mt-3 text-[10px] italic text-slate-400">Acesse o ícone de relógio ao lado de qualquer registro para visualizar seu histórico completo.</p>
           </FAQItem>
 
           {/* Segurança e Performance */}
-          <h3 className="px-4 pt-6 text-[10px] font-black uppercase tracking-widest text-indigo-600">Segurança & Performance</h3>
+          <h3 className="px-4 pt-8 text-[10px] font-medium uppercase tracking-[0.15em] text-slate-400">Segurança & Performance</h3>
 
           <FAQItem question="Níveis de Acesso (RBAC)" icon={<Lock className="h-4 w-4" />}>
             <ul className="list-disc pl-5 space-y-2">
@@ -148,7 +148,7 @@ export const FAQView = () => {
 
           <FAQItem question="O que fazer se um gráfico não carregar?" icon={<Shield className="h-4 w-4" />}>
             <p>Certifique-se de que:</p>
-            <ol className="list-decimal pl-5 mt-2 space-y-1">
+            <ol className="list-decimal pl-5 mt-3 space-y-2">
               <li>Você possui indicadores cadastrados para o filtro selecionado.</li>
               <li>O mês de referência possui consolidações concluídas.</li>
               <li>Se o problema persistir, tente limpar o cache do navegador ou verificar sua conexão com o banco de dados (Firestore).</li>

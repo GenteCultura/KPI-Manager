@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronRight, Users, Filter, BarChart3, LayoutDashboard, Calculator, CheckCircle2, AlertCircle, Network, Clock } from 'lucide-react';
 import { Toaster, toast } from 'react-hot-toast';
 import { User, AccessLevel, UserStatus, KPI, Area, Team, ConsolidatedIndicator, AuditLog, InventoryIndicator } from './types';
@@ -7,9 +7,8 @@ import { Input, Badge } from './components/ui/Input';
 import { UserModal } from './components/UserModal';
 import { KPIModal } from './components/KPIModal';
 import { IndicatorConsolidation } from './components/IndicatorConsolidation';
-import { MasterList } from './components/MasterList';
+import { StructureList } from './components/StructureList';
 import { Login } from './components/Login';
-import { Sidebar } from './components/Sidebar';
 import { ExportCenter } from './components/ExportCenter';
 import { Dashboard } from './components/Dashboard';
 import { OrgManagement } from './components/OrgManagement';
@@ -18,6 +17,7 @@ import { AuditTrailModal } from './components/AuditTrailModal';
 import { IndicatorInventory } from './components/IndicatorInventory';
 import { DataLogs } from './components/DataLogs';
 import { BulkImport } from './components/BulkImport';
+import { Calendar } from './components/Calendar';
 import { useStore } from './store/useStore';
 import { toSnakeCase, toCamelCase } from './lib/mapping';
 import { createAuditLog, getChanges } from './lib/audit';
@@ -26,12 +26,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { UserManagement } from './components/UserManagement';
 import { Settings } from './components/Settings';
 import { UserProfile } from './components/UserProfile';
+import { TopNav } from './components/TopNav';
+import { Homepage } from './components/Homepage';
 
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, query, orderBy, where } from 'firebase/firestore';
 
-type View = 'dashboard' | 'users' | 'consolidation' | 'master' | 'export' | 'org' | 'inventory' | 'settings' | 'import' | 'profile' | 'logs';
+type View = 'landing' | 'login' | 'dashboard' | 'users' | 'consolidation' | 'master' | 'export' | 'org' | 'inventory' | 'settings' | 'import' | 'profile' | 'logs' | 'calendar';
 
 export default function App() {
   const { 
@@ -41,6 +43,7 @@ export default function App() {
     setAreas, setTeams, setAuditLogs, auditLogs,
     setDataLogs, dataLogs,
     inventoryIndicators, setInventoryIndicators,
+    setBaseIndicators,
     setDiretorias, setDepartamentos, setGerencias, setServicos,
     setNotificationSettings,
     diretorias, departamentos, gerencias, servicos,
@@ -49,8 +52,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [sessionUser, setSessionUser] = useState<any>(null);
-  const [currentView, setCurrentView] = useState<View>('dashboard');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [currentView, setCurrentView] = useState<View>('login');
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   const currentUser = useMemo(() => {
@@ -121,7 +123,7 @@ export default function App() {
       const owner = users.find(u => u.id === kpi.ownerId);
       if (!owner) return false;
 
-      if (owner.department === currentUser.department) return true;
+      if (owner.departmentId === currentUser.departmentId) return true;
       if (currentUser.permissions?.canViewOtherDepartments) return true;
 
       const diretoria = diretorias.find(d => d.id === owner.diretoriaId);
@@ -146,7 +148,7 @@ export default function App() {
       const owner = users.find(u => u.id === indicator.responsibleId);
       if (!owner) return false;
 
-      if (owner.department === currentUser.department) return true;
+      if (owner.departmentId === currentUser.departmentId) return true;
       if (currentUser.permissions?.canViewOtherDepartments) return true;
 
       const diretoria = diretorias.find(d => d.id === owner.diretoriaId);
@@ -171,6 +173,7 @@ export default function App() {
       frequency: 'Mensal' as const,
       target: typeof ind.target === 'string' ? parseFloat(ind.target.replace(/[^0-9.]/g, '')) || 0 : ind.target,
       actual: 0,
+      weight: ind.weight || 0,
       ownerId: ind.responsibleId,
       status: 'Ativo' as const,
       diretoriaId: ind.diretoriaId,
@@ -182,7 +185,6 @@ export default function App() {
   }, [filteredKPIs, filteredInventoryIndicators]);
 
   const filteredUsers = useMemo(() => {
-    console.log('Recomputing filteredUsers - Source Users:', users.length);
     if (!currentUser) return [];
     
     const activeUsers = users.filter(user => user.status === 'Ativo');
@@ -229,19 +231,30 @@ export default function App() {
       setIsAuthenticated(!!user);
       setSessionUser(user);
       setIsAuthReady(true);
+      if (!user) {
+        setCurrentView('login');
+      }
     });
 
     return () => unsubscribe();
   }, []);
 
+  const usersRef = useRef<string>('');
+  
   // Real-time users listener
   useEffect(() => {
     if (!isAuthenticated || !isAuthReady) return;
 
     const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-      console.log('Users snapshot received:', snapshot.size, 'docs');
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(toCamelCase(data));
+      const camelData = toCamelCase(data);
+      const dataString = JSON.stringify(camelData);
+      
+      if (dataString !== usersRef.current) {
+        usersRef.current = dataString;
+        setUsers(camelData);
+        console.log('Users updated:', snapshot.size, 'docs');
+      }
       setIsLoadingData(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'users');
@@ -406,6 +419,21 @@ export default function App() {
       setInventoryIndicators(toCamelCase(data));
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'inventory_indicators');
+    });
+
+    return () => unsubscribe();
+  }, [isAuthenticated, isAuthReady, currentUser]);
+
+  // Real-time Base Indicators (Templates) listener
+  useEffect(() => {
+    if (!isAuthenticated || !isAuthReady || !currentUser) return;
+
+    const q = collection(db, 'base_indicators');
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setBaseIndicators(toCamelCase(data));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'base_indicators');
     });
 
     return () => unsubscribe();
@@ -612,184 +640,204 @@ export default function App() {
 
   if (!isAuthReady || (isAuthenticated && isLoadingData)) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" />
-          <p className="text-sm font-medium text-gray-500">
-            {!isAuthReady ? 'Carregando sistema...' : 'Sincronizando dados...'}
+      <div className="flex h-screen w-full items-center justify-center bg-[#F9FAFB]">
+        <div className="flex flex-col items-center gap-6">
+          <div className="h-8 w-8 animate-spin rounded-full border-[1.5px] border-slate-800 border-t-transparent" />
+          <p className="text-[10px] font-normal text-slate-400 uppercase tracking-[0.2em]">
+            {!isAuthReady ? 'Iniciando Sistema' : 'Sincronizando Dados'}
           </p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return (
-      <div>
-        <Login onLogin={() => setIsAuthenticated(true)} />
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-white text-slate-900">
-      <Toaster position="top-right" />
-      <Sidebar 
-        currentView={currentView} 
-        onViewChange={setCurrentView} 
-        onLogout={handleLogout}
-        isCollapsed={isSidebarCollapsed}
-        setIsCollapsed={setIsSidebarCollapsed}
-        currentUser={currentUser}
+    <div className="min-h-screen bg-[#F9FAFB] text-slate-800 selection:bg-slate-100 selection:text-slate-900 font-sans">
+      <Toaster 
+        position="top-right" 
+        toastOptions={{
+          style: {
+            background: '#fff',
+            color: '#1e293b',
+            fontSize: '12px',
+            borderRadius: '8px',
+            border: '1px solid #f1f5f9',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+            padding: '12px 16px',
+          }
+        }}
       />
 
-      <main 
-        className={`transition-all duration-300 p-4 sm:p-8 ${
-          isSidebarCollapsed ? 'ml-[80px]' : 'ml-[280px]'
-        }`}
-      >
-        <div className="mx-auto max-w-7xl">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentView}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {currentView === 'dashboard' && (
-                <Dashboard 
-                  kpis={dashboardKPIs} 
-                  users={filteredUsers} 
-                  consolidations={filteredConsolidations} 
-                  areas={filteredAreas}
-                  teams={filteredTeams}
-                  isLoading={isLoadingData}
-                />
-              )}
+      {isAuthenticated && (
+        <TopNav 
+          currentView={currentView} 
+          onViewChange={setCurrentView} 
+          onLogout={handleLogout}
+          currentUser={currentUser}
+        />
+      )}
 
-              {currentView === 'users' && (
-                <UserManagement 
-                  users={filteredUsers} 
-                  onEdit={handleEditUser} 
-                  onDelete={confirmDeleteUser} 
-                  onInactivate={handleInactivateUser}
-                  onOpenAuditTrail={handleOpenAuditTrail}
-                  onAdd={handleNewUser}
-                  currentUser={currentUser}
-                />
-              )}
+      {!isAuthenticated ? (
+        <main className="min-h-screen flex items-center justify-center bg-slate-900 overflow-hidden">
+          <Login onLogin={() => {
+            setIsAuthenticated(true);
+            setCurrentView('dashboard');
+          }} />
+        </main>
+      ) : (
+        <main className="transition-all duration-300 p-4 sm:p-6 lg:p-10 pt-8 sm:pt-12">
+          <div className="mx-auto max-w-[1600px]">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentView}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+              >
+                {currentView === 'landing' && <Homepage onNavigate={setCurrentView} />}
+                
+                {isAuthenticated && (
+                  <>
+                    {currentView === 'dashboard' && (
+                      <Dashboard 
+                        kpis={dashboardKPIs} 
+                        users={filteredUsers} 
+                        consolidations={filteredConsolidations} 
+                        areas={filteredAreas}
+                        teams={filteredTeams}
+                        isLoading={isLoadingData}
+                      />
+                    )}
+                    {currentView === 'calendar' && <Calendar currentUser={currentUser} kpis={filteredKPIs} />}
+                    {currentView === 'users' && (
+                      <UserManagement 
+                        users={filteredUsers} 
+                        onEdit={handleEditUser} 
+                        onDelete={confirmDeleteUser} 
+                        onInactivate={handleInactivateUser}
+                        onOpenAuditTrail={handleOpenAuditTrail}
+                        onAdd={handleNewUser}
+                        currentUser={currentUser}
+                      />
+                    )}
+                    {currentView === 'settings' && (
+                      <Settings 
+                        users={filteredUsers} 
+                        onEditUser={handleEditUser} 
+                        onDeleteUser={confirmDeleteUser} 
+                        onInactivateUser={handleInactivateUser}
+                        onOpenAuditTrail={handleOpenAuditTrail}
+                        onAddUser={handleNewUser}
+                        currentUser={currentUser}
+                      />
+                    )}
+                    {currentView === 'consolidation' && (
+                      <IndicatorConsolidation 
+                        users={filteredUsers} 
+                        areas={filteredAreas} 
+                        currentUser={currentUser} 
+                        isLoading={isLoadingData}
+                      />
+                    )}
+                    {currentView === 'master' && (
+                      <StructureList 
+                        kpis={filteredKPIs} 
+                        users={filteredUsers} 
+                        inventoryIndicators={filteredInventoryIndicators}
+                        auditLogs={auditLogs}
+                        onEdit={handleEditKPI}
+                        onDeleteKPI={handleDeleteKPI}
+                        onDeleteInventory={handleDeleteInventory}
+                        onOpenAuditTrail={handleOpenAuditTrail}
+                        currentUser={currentUser}
+                      />
+                    )}
+                    {currentView === 'org' && (
+                      <OrgManagement 
+                        users={users} 
+                        areas={filteredAreas} 
+                        teams={filteredTeams}
+                        diretorias={diretorias}
+                        departamentos={departamentos}
+                        gerencias={gerencias}
+                        servicos={servicos}
+                        currentUser={currentUser}
+                      />
+                    )}
+                    {currentView === 'inventory' && (
+                      <IndicatorInventory 
+                        indicators={filteredInventoryIndicators} 
+                        kpis={filteredKPIs} 
+                        currentUser={currentUser} 
+                        onOpenAuditTrail={handleOpenAuditTrail}
+                      />
+                    )}
+                    {currentView === 'logs' && <DataLogs />}
+                    {currentView === 'import' && <BulkImport />}
+                    {currentView === 'profile' && currentUser && (
+                      <UserProfile 
+                        user={currentUser} 
+                        onUpdate={(updatedUser) => {
+                          updateUser(updatedUser);
+                        }} 
+                      />
+                    )}
+                    {currentView === 'export' && (
+                      <ExportCenter 
+                        kpis={filteredKPIs} 
+                        users={filteredUsers} 
+                        consolidations={filteredConsolidations} 
+                        inventoryIndicators={filteredInventoryIndicators} 
+                      />
+                    )}
+                  </>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </main>
+      )}
 
-              {currentView === 'settings' && (
-                <Settings 
-                  users={filteredUsers} 
-                  onEditUser={handleEditUser} 
-                  onDeleteUser={confirmDeleteUser} 
-                  onInactivateUser={handleInactivateUser}
-                  onOpenAuditTrail={handleOpenAuditTrail}
-                  onAddUser={handleNewUser}
-                  currentUser={currentUser}
-                />
-              )}
+      {isAuthenticated && (
+        <>
+          <UserModal
+            isOpen={isUserModalOpen}
+            onClose={() => setIsUserModalOpen(false)}
+            onSave={handleSaveUser}
+            user={editingUser}
+          />
 
-              {currentView === 'consolidation' && (
-                <IndicatorConsolidation 
-                  users={filteredUsers} 
-                  areas={filteredAreas} 
-                  currentUser={currentUser} 
-                  isLoading={isLoadingData}
-                />
-              )}
-              {currentView === 'master' && (
-                <MasterList 
-                  kpis={filteredKPIs} 
-                  users={filteredUsers} 
-                  inventoryIndicators={filteredInventoryIndicators}
-                  onEdit={handleEditKPI}
-                  onDeleteKPI={handleDeleteKPI}
-                  onDeleteInventory={handleDeleteInventory}
-                  onOpenAuditTrail={handleOpenAuditTrail}
-                  currentUser={currentUser}
-                />
-              )}
-              {currentView === 'org' && (
-                <OrgManagement 
-                  users={users} 
-                  areas={filteredAreas} 
-                  teams={filteredTeams}
-                  diretorias={diretorias}
-                  departamentos={departamentos}
-                  gerencias={gerencias}
-                  servicos={servicos}
-                  currentUser={currentUser}
-                />
-              )}
-              {currentView === 'inventory' && (
-                <IndicatorInventory 
-                  indicators={filteredInventoryIndicators} 
-                  kpis={filteredKPIs} 
-                  currentUser={currentUser} 
-                  onOpenAuditTrail={handleOpenAuditTrail}
-                />
-              )}
-              {currentView === 'logs' && <DataLogs />}
-              {currentView === 'import' && <BulkImport />}
-              {currentView === 'profile' && currentUser && (
-                <UserProfile 
-                  user={currentUser} 
-                  onUpdate={(updatedUser) => {
-                    updateUser(updatedUser);
-                  }} 
-                />
-              )}
-              {currentView === 'export' && (
-                <ExportCenter 
-                  kpis={filteredKPIs} 
-                  users={filteredUsers} 
-                  consolidations={filteredConsolidations} 
-                  inventoryIndicators={filteredInventoryIndicators} 
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </main>
+          <KPIModal
+            isOpen={isKPIModalOpen}
+            onClose={() => setIsKPIModalOpen(false)}
+            onSave={handleSaveKPI}
+            users={users}
+            diretorias={diretorias}
+            departamentos={departamentos}
+            gerencias={gerencias}
+            servicos={servicos}
+            teams={teams}
+            initialData={editingKPI}
+          />
 
-      <UserModal
-        isOpen={isUserModalOpen}
-        onClose={() => setIsUserModalOpen(false)}
-        onSave={handleSaveUser}
-        user={editingUser}
-      />
+          <AuditTrailModal
+            isOpen={isAuditModalOpen}
+            onClose={() => setIsAuditModalOpen(false)}
+            title={selectedAuditItem?.name || ''}
+            logs={auditLogs.filter(log => log.targetId === selectedAuditItem?.id)}
+          />
 
-      <KPIModal
-        isOpen={isKPIModalOpen}
-        onClose={() => setIsKPIModalOpen(false)}
-        onSave={handleSaveKPI}
-        users={users}
-        diretorias={diretorias}
-        departamentos={departamentos}
-        gerencias={gerencias}
-        servicos={servicos}
-        teams={teams}
-        initialData={editingKPI}
-      />
-
-      <AuditTrailModal
-        isOpen={isAuditModalOpen}
-        onClose={() => setIsAuditModalOpen(false)}
-        title={selectedAuditItem?.name || ''}
-        logs={auditLogs.filter(log => log.targetId === selectedAuditItem?.id)}
-      />
-
-      <DeleteConfirmationModal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={() => userToDeleteId && handleDeleteUser(userToDeleteId)}
-        title="Excluir Usuário"
-        message="Tem certeza que deseja excluir este usuário"
-        itemName={users.find(u => u.id === userToDeleteId)?.name}
-      />
+          <DeleteConfirmationModal
+            isOpen={isDeleteModalOpen}
+            onClose={() => setIsDeleteModalOpen(false)}
+            onConfirm={() => userToDeleteId && handleDeleteUser(userToDeleteId)}
+            title="Excluir Usuário"
+            message="Tem certeza que deseja excluir este usuário"
+            itemName={users.find(u => u.id === userToDeleteId)?.name}
+          />
+        </>
+      )}
     </div>
   );
 }

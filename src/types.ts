@@ -11,6 +11,20 @@ export type KPIPolarity = 'Cima' | 'Baixo' | 'Igual';
 export type KPIFrequency = 'Mensal' | 'Semanal' | 'Diário' | 'Anual';
 export type KPICategory = 'Vaidade' | 'Produtividade' | 'Qualidade' | 'Capacidade' | 'Estratégico';
 export type KPIStatus = 'Abaixo da Meta' | 'Atingiu a Meta' | 'Superou a Meta' | 'No Prazo' | 'Atrasado' | 'Meta Batida' | 'Alerta' | 'Não atingiu a Meta';
+export type ScoringType = 'Binary' | 'Range' | 'Linear';
+
+export interface ScoringRule {
+  id: string;
+  target: string;
+  comparison: 'Greater' | 'Less' | 'Equal' | 'GreaterEqual' | 'LessEqual';
+  weight: number;
+}
+
+export interface ScoringRange {
+  min: number; // % of target (e.g., 80)
+  max: number; // % of target (e.g., 100)
+  points: number; // % of weight to award (e.g., 50)
+}
 
 export interface UserPermissions {
   canCreateIndicators: boolean;
@@ -105,8 +119,13 @@ export interface KPI {
   ownerId: string;
   target?: number;
   actual?: number;
+  weight: number;
   status: UserStatus;
   kpiStatus?: KPIStatus; // Farol status
+  scoringType?: ScoringType;
+  scoringRanges?: ScoringRange[];
+  rules?: ScoringRule[];
+  travaZero?: number;
 }
 
 export interface BaseIndicator {
@@ -117,6 +136,11 @@ export interface BaseIndicator {
   startDate?: string;
   endDate?: string;
   polarity?: KPIPolarity;
+  scoringType?: ScoringType;
+  scoringRanges?: ScoringRange[];
+  rules?: ScoringRule[];
+  travaZero?: number;
+  rawTarget?: string;
 }
 
 export interface SelectedIndicator extends BaseIndicator {
@@ -126,6 +150,7 @@ export interface SelectedIndicator extends BaseIndicator {
   unit?: KPIUnit;
   isNotAvailable?: boolean;
   polarity?: KPIPolarity;
+  travaZero?: number;
 }
 
 export type InventoryStatus = 'Em Planejamento' | 'Ativo' | 'Concluído' | 'Cancelado';
@@ -154,6 +179,10 @@ export interface InventoryIndicator {
   endDate: string;
   status: InventoryStatus;
   polarity: KPIPolarity;
+  scoringType?: ScoringType;
+  scoringRanges?: ScoringRange[];
+  rules?: ScoringRule[];
+  travaZero?: number;
 }
 
 export interface AuditLog {
@@ -180,6 +209,8 @@ export interface ConsolidatedIndicator {
   indicators: SelectedIndicator[];
   diretoriaId?: string;
   departmentId?: string;
+  gerenciaId?: string;
+  servicoId?: string;
   teamId?: string;
   createdAt: string;
   month: string;
@@ -221,12 +252,16 @@ export interface MasterIndicator {
   name: string;
   department: string;
   responsible: string;
+  responsibleId?: string;
   period: string;
   target: string;
   actual: string;
   status: KPIStatus;
   category?: KPICategory;
   frequency?: KPIFrequency;
+  scoringType?: ScoringType;
+  rules?: ScoringRule[];
+  travaZero?: number;
 }
 
 export interface NotificationSettings {
@@ -237,6 +272,29 @@ export interface NotificationSettings {
   recipients: 'Admins' | 'Gestores' | 'Todos';
   customEmails: string[];
   lastRun?: string;
+}
+
+export type CalendarEventType = 'Deadline' | 'Meeting' | 'Holiday' | 'Other';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  startDate: string; // ISO date string
+  endDate: string; // ISO date string
+  type: CalendarEventType;
+  createdBy: string;
+  createdById: string;
+  createdAt: string;
+  color?: string;
+  notificationOffset?: number; // Minutes before start_time
+  linkedKpiId?: string;
+  notificationScheduled?: boolean;
+  priority?: 'Low' | 'Medium' | 'High';
+  channel?: 'Email' | 'Push' | 'Both';
+  daysBeforeEnd?: number;
+  notificationStartReminder?: boolean;
+  notificationDeadlineAlert?: boolean;
 }
 
 export const MASTER_INDICATORS_MOCK: MasterIndicator[] = [];

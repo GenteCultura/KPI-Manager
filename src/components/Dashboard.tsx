@@ -20,10 +20,10 @@ import {
   ArrowDownRight,
   Target
 } from 'lucide-react';
-import { KPI, User, ConsolidatedIndicator, Area, Team, KPIStatus } from '../types';
+import { KPI, User, ConsolidatedIndicator, Area, Team, KPIStatus, CalendarEvent } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../store/useStore';
-import { calculateWeightedAchievement } from '../utils/calculationEngine';
+import { calculateWeightedAchievement, calculateKPIStatus } from '../utils/calculationEngine';
 import { Button } from './ui/Button';
 import { 
   BarChart, 
@@ -55,7 +55,7 @@ interface DashboardProps {
 }
 
 export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams: propTeams, isLoading = false }: DashboardProps) => {
-  const { areas: storeAreas, teams: storeTeams, diretorias, departamentos, gerencias } = useStore();
+  const { areas: storeAreas, teams: storeTeams, diretorias, departamentos, gerencias, calendarEvents } = useStore();
   const areas = propAreas || storeAreas;
   const teams = propTeams || storeTeams;
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -69,7 +69,19 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const monthConsolidations = useMemo(() => {
-    return consolidations.filter(c => c.month === selectedMonth);
+    const filtered = consolidations.filter(c => c.month === selectedMonth);
+    
+    // Group by collaborator and take the most recent one
+    const latestByCollab = new Map<string, ConsolidatedIndicator>();
+    
+    // Sort by createdAt ascending so the last one processed is the most recent
+    [...filtered]
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+      .forEach(c => {
+        latestByCollab.set(c.collaboratorId, c);
+      });
+      
+    return Array.from(latestByCollab.values());
   }, [consolidations, selectedMonth]);
 
   const filteredUsers = useMemo(() => {
@@ -109,18 +121,33 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
     };
 
     filteredKpis.forEach(kpi => {
-      const status = kpi.kpiStatus || 'Sem Dados';
-      if (statusCounts[status] !== undefined) {
-        statusCounts[status]++;
+      let status: string | undefined = kpi.kpiStatus;
+      
+      // If status is missing, calculate it on the fly
+      if (!status && kpi.actual !== undefined && kpi.target !== undefined) {
+        status = calculateKPIStatus(kpi.actual, kpi.target, kpi.polarity || 'Cima');
+      }
+      
+      const finalStatus = status || 'Sem Dados';
+      
+      if (statusCounts[finalStatus] !== undefined) {
+        statusCounts[finalStatus]++;
       } else {
         statusCounts['Sem Dados']++;
       }
     });
 
-    return Object.entries(statusCounts).map(([name, value]) => ({ name, value }));
+    return Object.entries(statusCounts)
+      .map(([name, value]) => ({ name, value }))
+      .filter(item => item.value > 0); // Only show statuses that have at least one KPI
   }, [filteredKpis]);
 
-  const COLORS = ['#10b981', '#f59e0b', '#ef4444', '#94a3b8'];
+  const STATUS_COLORS: Record<string, string> = {
+    'Superou a Meta': '#10b981',
+    'Atingiu a Meta': '#f59e0b',
+    'Abaixo da Meta': '#ef4444',
+    'Sem Dados': '#94a3b8'
+  };
 
   // Chart Data: Performance by Department
   const deptPerformanceData = useMemo(() => {
@@ -142,7 +169,7 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
     return Object.entries(deptScores)
       .map(([name, data]) => ({
         name,
-        score: Math.round(data.total / data.count)
+        score: Math.round((data.total / data.count) * 100) / 100
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 6);
@@ -158,13 +185,23 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
     }
 
     return months.map(m => {
-      const mConsolidations = consolidations.filter(c => c.month === m);
+      const mFiltered = consolidations.filter(c => c.month === m);
+      
+      // Deduplicate for this month
+      const latestByCollab = new Map<string, ConsolidatedIndicator>();
+      [...mFiltered]
+        .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime())
+        .forEach(c => {
+          latestByCollab.set(c.collaboratorId, c);
+        });
+      
+      const mConsolidations = Array.from(latestByCollab.values());
       const validScores = mConsolidations
         .map(c => calculateWeightedAchievement(c))
         .filter((s): s is number => s !== null);
       
       const totalScore = validScores.reduce((acc, s) => acc + s, 0);
-      const avgScore = validScores.length > 0 ? Math.round(totalScore / validScores.length) : 0;
+      const avgScore = validScores.length > 0 ? Math.round((totalScore / validScores.length) * 100) / 100 : 0;
       return {
         month: m.split('-')[1] + '/' + m.split('-')[0].slice(2),
         score: avgScore
@@ -222,7 +259,7 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
       );
       
       const totalScore = groupConsolidations.reduce((acc, c) => acc + calculateWeightedAchievement(c), 0);
-      const avgScore = groupConsolidations.length > 0 ? Math.round(totalScore / groupConsolidations.length) : 0;
+      const avgScore = groupConsolidations.length > 0 ? Math.round((totalScore / groupConsolidations.length) * 100) / 100 : 0;
       
       return {
         group,
@@ -237,57 +274,64 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
     const scores = filteredMonthConsolidations
       .map(c => calculateWeightedAchievement(c))
       .filter((s): s is number => s !== null);
-    return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+    return scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : 0;
   }, [filteredMonthConsolidations]);
 
+  const upcomingEvents = useMemo(() => {
+    const now = new Date();
+    return calendarEvents
+      .filter(event => new Date(event.startDate) >= now)
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+      .slice(0, 3);
+  }, [calendarEvents]);
+
   const stats = [
-    { label: 'IDC Global', value: `${globalIdco}%`, change: `Meta: ${IDC_TARGET}%`, icon: LayoutDashboard, color: globalIdco > IDC_TARGET ? 'emerald' : globalIdco === IDC_TARGET ? 'amber' : 'rose', trend: globalIdco >= IDC_TARGET ? 'up' : 'down' },
-    { label: 'Total de KPIs', value: totalKpis.toString(), change: `${kpiCompletionRate}% Preenchido`, icon: BarChart3, color: 'indigo', trend: 'up' },
-    { label: 'Usuários Ativos', value: activeUsers.toString(), change: `${activeRate}% Ativos`, icon: Users, color: 'emerald', trend: 'up' },
-    { label: 'Taxa de Consolidação', value: `${activeUsers > 0 ? Math.round((filteredMonthConsolidations.length / activeUsers) * 100) : 0}%`, change: `${filteredMonthConsolidations.length} Concluídas`, icon: Activity, color: 'sky', trend: 'up' },
+    { label: 'IDC Global', value: `${globalIdco} pts`, change: `Meta: ${IDC_TARGET} pts`, icon: LayoutDashboard, color: 'slate', trend: globalIdco >= IDC_TARGET ? 'up' : 'down' },
+    { label: 'Total de KPIs', value: totalKpis.toString(), change: `${kpiCompletionRate}% Preenchido`, icon: BarChart3, color: 'slate', trend: 'up' },
+    { label: 'Usuários Ativos', value: activeUsers.toString(), change: `${activeRate}% Ativos`, icon: Users, color: 'slate', trend: 'up' },
+    { label: 'Taxa de Consolidação', value: `${activeUsers > 0 ? Math.round((filteredMonthConsolidations.length / activeUsers) * 100) : 0}%`, change: `${filteredMonthConsolidations.length} Concluídas`, icon: Activity, color: 'slate', trend: 'up' },
   ];
 
   const colorMap: Record<string, { bg: string, text: string, border: string, iconBg: string }> = {
-    indigo: { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-100', iconBg: 'bg-indigo-600' },
-    emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', iconBg: 'bg-emerald-600' },
-    amber: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-100', iconBg: 'bg-amber-600' },
-    rose: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-100', iconBg: 'bg-rose-600' },
-    sky: { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-100', iconBg: 'bg-sky-600' },
+    slate: { bg: 'bg-slate-50', text: 'text-slate-600', border: 'border-slate-100', iconBg: 'bg-slate-500' },
+    success: { bg: 'bg-[#F1F5F3]', text: 'text-[#8DA399]', border: 'border-[#E2E8E5]', iconBg: 'bg-[#8DA399]' },
+    error: { bg: 'bg-[#F9F4F2]', text: 'text-[#C57B67]', border: 'border-[#EFE2DE]', iconBg: 'bg-[#C57B67]' },
+    warning: { bg: 'bg-[#F7F4F0]', text: 'text-[#D4B483]', border: 'border-[#EFE9E0]', iconBg: 'bg-[#D4B483]' },
   };
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-10 pb-12">
       {/* Header Section */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="flex items-center gap-5">
-          <div className="flex h-16 w-16 items-center justify-center rounded-[2rem] bg-indigo-600 text-white shadow-2xl shadow-indigo-200 ring-8 ring-indigo-50">
-            <LayoutDashboard className="h-8 w-8" />
+        <div className="flex items-center gap-6">
+          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-800 text-white shadow-sm ring-1 ring-slate-200">
+            <LayoutDashboard className="h-6 w-6 stroke-[1.5]" />
           </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tight text-slate-900">Dashboard Executivo</h1>
-            <p className="text-slate-500 font-medium">Análise de performance corporativa e indicadores de gestão.</p>
+            <h1 className="text-2xl font-normal tracking-[0.05em] text-slate-800 uppercase">Dashboard Executivo</h1>
+            <p className="text-slate-400 text-sm font-light mt-1">Análise de performance corporativa e indicadores de gestão.</p>
           </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-            <Calendar className="h-5 w-5 text-indigo-500 ml-2" />
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+            <Calendar className="h-4 w-4 text-slate-400" />
             <input 
               type="month" 
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="text-sm font-black text-slate-700 outline-none bg-transparent border-none focus:ring-0 cursor-pointer"
+              className="text-xs font-normal text-slate-600 outline-none bg-transparent border-none focus:ring-0 cursor-pointer"
             />
           </div>
 
           <Button 
             variant="outline" 
             onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`!h-12 gap-2 !rounded-2xl px-6 font-bold border-slate-200 shadow-sm transition-all ${isFilterOpen ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
+            className={`!h-10 gap-2 !rounded-lg px-5 text-xs font-normal tracking-wide border-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all ${isFilterOpen ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
           >
-            <Filter className="h-5 w-5" />
+            <Filter className="h-4 w-4" />
             Filtros Avançados
-            <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${isFilterOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${isFilterOpen ? 'rotate-180' : ''}`} />
           </Button>
         </div>
       </div>
@@ -301,11 +345,11 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
             exit={{ height: 0, opacity: 0, y: -20 }}
             className="overflow-hidden"
           >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-8 rounded-[2.5rem] border border-indigo-100 bg-white shadow-xl shadow-indigo-100/20">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 p-8 rounded-2xl border border-slate-200 bg-white shadow-[0_4px_20px_rgba(0,0,0,0.03)]">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Diretoria</label>
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.15em] ml-1">Diretoria</label>
                 <select 
-                   className="w-full h-12 rounded-2xl border border-slate-100 bg-slate-50/50 px-4 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none cursor-pointer transition-all"
+                   className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50/30 px-4 text-xs font-normal text-slate-600 focus:border-slate-400 outline-none cursor-pointer transition-all"
                   value={selectedDiretoria}
                   onChange={(e) => {
                     setSelectedDiretoria(e.target.value);
@@ -319,9 +363,9 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Departamento</label>
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.15em] ml-1">Departamento</label>
                 <select 
-                  className="w-full h-12 rounded-2xl border border-slate-100 bg-slate-50/50 px-4 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none cursor-pointer transition-all"
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50/30 px-4 text-xs font-normal text-slate-600 focus:border-slate-400 outline-none cursor-pointer transition-all"
                   value={selectedDepartment}
                   onChange={(e) => {
                     setSelectedDepartment(e.target.value);
@@ -336,9 +380,9 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Gerência</label>
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.15em] ml-1">Gerência</label>
                 <select 
-                  className="w-full h-12 rounded-2xl border border-slate-100 bg-slate-50/50 px-4 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none cursor-pointer transition-all"
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50/30 px-4 text-xs font-normal text-slate-600 focus:border-slate-400 outline-none cursor-pointer transition-all"
                   value={selectedGerencia}
                   onChange={(e) => {
                     setSelectedGerencia(e.target.value);
@@ -352,9 +396,9 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest ml-1">Time / Equipe</label>
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.15em] ml-1">Time / Equipe</label>
                 <select 
-                  className="w-full h-12 rounded-2xl border border-slate-100 bg-slate-50/50 px-4 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none cursor-pointer transition-all"
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50/30 px-4 text-xs font-normal text-slate-600 focus:border-slate-400 outline-none cursor-pointer transition-all"
                   value={selectedTeam}
                   onChange={(e) => setSelectedTeam(e.target.value)}
                 >
@@ -369,32 +413,28 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
         )}
       </AnimatePresence>
       
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat, i) => {
-          const colors = colorMap[stat.color] || colorMap.indigo;
+          const colors = colorMap[stat.color] || colorMap.slate;
           return (
             <motion.div 
               key={i} 
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="relative overflow-hidden rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40 group hover:shadow-2xl hover:shadow-indigo-100/50 transition-all duration-500"
+              transition={{ delay: i * 0.05 }}
+              className="relative overflow-hidden rounded-xl border border-slate-200/60 bg-white p-6 shadow-[0_2px_4px_rgba(0,0,0,0.02)] group hover:border-slate-300 transition-all duration-300"
             >
-              <div className="flex items-center justify-between mb-6">
-                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${colors.iconBg} text-white shadow-lg shadow-indigo-100 group-hover:scale-110 transition-transform duration-500`}>
-                  <stat.icon className="h-7 w-7" />
+              <div className="flex items-center justify-between mb-4">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${colors.iconBg} text-white shadow-sm transition-transform duration-500`}>
+                  <stat.icon className="h-5 w-5 stroke-[1.5]" />
                 </div>
-                <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${stat.trend === 'up' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
-                  {stat.trend === 'up' ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                <div className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium uppercase tracking-wider border ${stat.trend === 'up' ? 'bg-[#F1F5F3] text-[#8DA399] border-[#E2E8E5]' : 'bg-[#F9F4F2] text-[#C57B67] border-[#EFE2DE]'}`}>
+                  {stat.trend === 'up' ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
                   {stat.change}
                 </div>
               </div>
-              <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">{stat.label}</h3>
-              <p className="text-4xl font-black text-slate-900 mt-2 tracking-tight">{stat.value}</p>
-              
-              {/* Decorative background element */}
-              <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${colors.bg} opacity-20 group-hover:scale-150 transition-transform duration-700`} />
+              <h3 className="text-[10px] font-medium text-slate-400 uppercase tracking-[0.15em]">{stat.label}</h3>
+              <p className="text-2xl font-normal text-slate-800 mt-1 tracking-tight">{stat.value}</p>
             </motion.div>
           );
         })}
@@ -403,26 +443,31 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
       {/* Main Charts Grid */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* Performance Trend Chart */}
-        <div className="lg:col-span-2 rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40">
+        <div className="lg:col-span-2 rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h3 className="text-xl font-black text-slate-900">Evolução de Performance</h3>
-              <p className="text-sm text-slate-500 font-medium">Média global de IDCO nos últimos 6 meses.</p>
+              <h3 className="text-lg font-normal tracking-wide text-slate-800 uppercase">Evolução de Performance</h3>
+              <p className="text-xs text-slate-400 font-light mt-1">Média global de IDCO nos últimos 6 meses.</p>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-              <TrendingUp className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50 text-slate-400 border border-slate-100">
+              <TrendingUp className="h-5 w-5 stroke-[1.5]" />
             </div>
           </div>
-          <div className="h-[400px] w-full">
+          <div className="h-[350px] w-full">
             {isLoading ? (
               <ChartSkeleton />
+            ) : monthlyTrendData.length === 0 || monthlyTrendData.every(d => d.score === 0) ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-300 bg-slate-50/30 rounded-xl border border-dashed border-slate-200">
+                <TrendingUp className="h-10 w-10 mb-3 opacity-20" />
+                <p className="text-xs font-normal">Sem dados de evolução para exibir</p>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" debounce={1}>
                 <AreaChart data={monthlyTrendData}>
                   <defs>
                     <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#64748b" stopOpacity={0.05}/>
+                      <stop offset="95%" stopColor="#64748b" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -430,24 +475,25 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
                     dataKey="month" 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }}
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 400 }}
                     dy={10}
                   />
                   <YAxis 
                     axisLine={false} 
                     tickLine={false} 
-                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 600 }}
+                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 400 }}
                     domain={[0, 100]}
                   />
                   <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
-                    labelStyle={{ fontWeight: 800, color: '#1e293b', marginBottom: '4px' }}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #f1f5f9', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', padding: '8px' }}
+                    labelStyle={{ fontWeight: 500, color: '#475569', fontSize: '12px' }}
+                    itemStyle={{ fontSize: '12px' }}
                   />
                   <RechartsArea 
                     type="monotone" 
                     dataKey="score" 
-                    stroke="#4f46e5" 
-                    strokeWidth={4} 
+                    stroke="#64748b" 
+                    strokeWidth={1.5} 
                     fillOpacity={1} 
                     fill="url(#colorScore)" 
                     isAnimationActive={false}
@@ -459,19 +505,24 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
         </div>
 
         {/* KPI Status Distribution */}
-        <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40">
+        <div className="rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h3 className="text-xl font-black text-slate-900">Status dos KPIs</h3>
-              <p className="text-sm text-slate-500 font-medium">Distribuição atual de metas.</p>
+              <h3 className="text-lg font-normal tracking-wide text-slate-800 uppercase">Status dos KPIs</h3>
+              <p className="text-xs text-slate-400 font-light mt-1">Distribuição atual de metas.</p>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
-              <PieChartIcon className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-50 text-slate-400 border border-slate-100">
+              <PieChartIcon className="h-5 w-5 stroke-[1.5]" />
             </div>
           </div>
-          <div className="h-[400px] w-full">
+          <div className="h-[300px] w-full">
             {isLoading ? (
               <ChartSkeleton />
+            ) : kpiStatusData.length === 0 || kpiStatusData.every(d => d.value === 0) ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-300 bg-slate-50/30 rounded-xl border border-dashed border-slate-200">
+                <PieChartIcon className="h-10 w-10 mb-3 opacity-20" />
+                <p className="text-xs font-normal">Sem KPIs para analisar</p>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" debounce={1}>
                 <PieChart>
@@ -479,37 +530,37 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
                     data={kpiStatusData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={70}
-                    outerRadius={100}
-                    paddingAngle={8}
+                    innerRadius={60}
+                    outerRadius={85}
+                    paddingAngle={4}
                     dataKey="value"
                     isAnimationActive={false}
                   >
                     {kpiStatusData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
+                      <Cell key={`cell-${index}`} fill={STATUS_COLORS[entry.name] || '#94a3b8'} stroke="none" />
                     ))}
                   </Pie>
                   <Tooltip 
-                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #f1f5f9', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}
                   />
                   <Legend 
                     verticalAlign="bottom" 
                     height={36} 
                     iconType="circle"
-                    formatter={(value) => <span className="text-xs font-bold text-slate-600">{value}</span>}
+                    formatter={(value) => <span className="text-[10px] font-normal text-slate-500 uppercase tracking-wider">{value}</span>}
                   />
                 </PieChart>
               </ResponsiveContainer>
             )}
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total KPIs</p>
-              <p className="text-xl font-black text-slate-900">{totalKpis}</p>
+          <div className="mt-6 grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-lg bg-slate-50/50 border border-slate-100">
+              <p className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">Total KPIs</p>
+              <p className="text-lg font-normal text-slate-700 mt-1">{totalKpis}</p>
             </div>
-            <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-100">
-              <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Batidos</p>
-              <p className="text-xl font-black text-indigo-600">{metTargets}</p>
+            <div className="p-4 rounded-lg bg-slate-50/50 border border-slate-100">
+              <p className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">Batidos</p>
+              <p className="text-lg font-normal text-slate-700 mt-1">{metTargets}</p>
             </div>
           </div>
         </div>
@@ -517,82 +568,81 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* Collaborator Status Table */}
-        <div className="lg:col-span-2 rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40">
+        <div className="lg:col-span-2 rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-10">
             <div>
-              <h3 className="text-2xl font-black text-slate-900">Status por Colaborador</h3>
-              <p className="text-sm text-slate-500 font-medium">Acompanhamento de consolidações para {selectedMonth}</p>
+              <h3 className="text-lg font-normal tracking-wide text-slate-800 uppercase">Status por Colaborador</h3>
+              <p className="text-xs text-slate-400 font-light mt-1">Acompanhamento de consolidações para {selectedMonth}</p>
             </div>
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
               <input 
                 type="text"
                 placeholder="Buscar colaborador..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-12 w-full rounded-2xl border border-slate-100 bg-slate-50/50 pl-12 pr-4 text-sm font-bold text-slate-700 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50/30 pl-11 pr-4 text-xs font-normal text-slate-600 focus:border-slate-400 outline-none transition-all"
               />
             </div>
           </div>
 
-          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
             {collaboratorsStatus.map((collab) => (
               <motion.div 
                 key={collab.id} 
                 layout
-                className="flex items-center justify-between p-5 rounded-3xl border border-slate-50 bg-white hover:border-indigo-100 hover:bg-indigo-50/20 hover:shadow-lg hover:shadow-indigo-100/20 transition-all duration-300 group cursor-pointer"
+                className="flex items-center justify-between p-4 rounded-lg border border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50/30 transition-all duration-300 group cursor-pointer"
               >
-                <div className="flex items-center gap-5">
-                  <div className={`h-14 w-14 rounded-2xl flex items-center justify-center text-lg font-black transition-all duration-300 ${collab.hasConsolidation ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-slate-100 text-slate-400'}`}>
+                <div className="flex items-center gap-4">
+                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center text-sm font-normal transition-all duration-300 ${collab.hasConsolidation ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-300 border border-slate-100'}`}>
                     {collab.name.charAt(0)}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors truncate">{collab.name}</h4>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                    <h4 className="text-sm font-normal text-slate-700 group-hover:text-slate-900 transition-colors truncate">{collab.name}</h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider">
                         {departamentos.find(d => d.id === collab.departmentId)?.name || 'N/A'}
                       </span>
-                      <span className="h-1 w-1 rounded-full bg-slate-300" />
-                      <span className="text-xs font-bold text-indigo-500">{collab.role}</span>
+                      <span className="h-0.5 w-0.5 rounded-full bg-slate-200" />
+                      <span className="text-[9px] font-medium text-slate-500">{collab.role}</span>
                     </div>
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-8 shrink-0">
+                <div className="flex items-center gap-6 shrink-0">
                   {collab.hasConsolidation ? (
                     <div className="flex flex-col items-end">
                       {collab.score === null ? (
-                        <div className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-slate-100 text-slate-500 border border-slate-200">
-                          <Clock className="h-4 w-4" />
-                          <span className="text-xs font-black uppercase tracking-widest">Férias / N/A</span>
+                        <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-slate-50 text-slate-400 border border-slate-100">
+                          <Clock className="h-3 w-3" />
+                          <span className="text-[9px] font-medium uppercase tracking-wider">Férias</span>
                         </div>
                       ) : (
                         <>
-                          <div className={`flex items-center gap-2 px-4 py-1.5 rounded-xl border ${collab.score > IDC_TARGET ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : collab.score === IDC_TARGET ? 'bg-amber-50 text-amber-600 border-amber-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
-                            {collab.score >= IDC_TARGET ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
-                            <span className="text-xs font-black uppercase tracking-widest">
-                              {collab.score > IDC_TARGET ? 'Superou a Meta' : collab.score === IDC_TARGET ? 'Atingiu a Meta' : 'Não atingiu a Meta'}
+                          <div className={`flex items-center gap-2 px-3 py-1 rounded-md border ${collab.score > IDC_TARGET ? 'bg-[#F1F5F3] text-[#8DA399] border-[#E2E8E5]' : collab.score === IDC_TARGET ? 'bg-[#F7F4F0] text-[#D4B483] border-[#EFE9E0]' : 'bg-[#F9F4F2] text-[#C57B67] border-[#EFE2DE]'}`}>
+                            <span className="text-[9px] font-medium uppercase tracking-wider">
+                              {collab.score > IDC_TARGET ? 'Superou' : collab.score === IDC_TARGET ? 'Atingiu' : 'Abaixo'}
                             </span>
                           </div>
-                          <span className="text-xs font-black text-slate-900 mt-2">Score: {collab.score}</span>
+                          <span className="text-[10px] font-normal text-slate-500 mt-1.5">Score: {collab.score}</span>
                         </>
                       )}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 px-4 py-1.5 rounded-xl bg-amber-50 text-amber-600 border border-amber-100">
-                      <AlertCircle className="h-4 w-4" />
-                      <span className="text-xs font-black uppercase tracking-widest">Pendente</span>
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-[#F9F4F2] text-[#C57B67] border border-[#EFE2DE]">
+                      <AlertCircle className="h-3 w-3" />
+                      <span className="text-[9px] font-medium uppercase tracking-wider">Pendente</span>
                     </div>
                   )}
                 </div>
               </motion.div>
             ))}
             {collaboratorsStatus.length === 0 && (
-              <div className="py-24 text-center">
-                <div className="flex h-20 w-20 items-center justify-center rounded-[2rem] bg-slate-50 text-slate-200 mx-auto mb-6 shadow-inner">
-                  <Users className="h-10 w-10" />
+              <div className="py-20 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-50 text-slate-200 mx-auto mb-4 border border-slate-100">
+                  <Users className="h-8 w-8" />
                 </div>
-                <p className="text-slate-400 font-bold text-lg">Nenhum colaborador encontrado.</p>
+                <p className="text-slate-400 font-light text-sm">Nenhum colaborador encontrado.</p>
               </div>
             )}
           </div>
@@ -601,14 +651,19 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
         {/* Side Panels */}
         <div className="space-y-8">
           {/* Department Performance Bar Chart */}
-          <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40">
-            <h3 className="text-lg font-black text-slate-900 mb-8 flex items-center gap-3">
-              <Network className="h-5 w-5 text-indigo-600" />
+          <div className="rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+            <h3 className="text-lg font-normal tracking-wide text-slate-800 uppercase mb-8 flex items-center gap-3">
+              <Network className="h-4 w-4 text-slate-400" />
               Performance por Depto.
             </h3>
-          <div className="h-[400px] w-full">
+          <div className="h-[350px] w-full">
             {isLoading ? (
               <ChartSkeleton />
+            ) : deptPerformanceData.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-300 bg-slate-50/30 rounded-xl border border-dashed border-slate-200">
+                <Network className="h-10 w-10 mb-3 opacity-20" />
+                <p className="text-xs font-normal">Sem dados por departamento</p>
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" debounce={1}>
                 <BarChart data={deptPerformanceData} layout="vertical">
@@ -619,22 +674,22 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
                     type="category" 
                     axisLine={false} 
                     tickLine={false} 
-                    width={100}
-                    tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                    width={80}
+                    tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 400 }}
                   />
                   <Tooltip 
                     cursor={{ fill: '#f8fafc' }}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #f1f5f9', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}
                   />
                   <Bar 
                     dataKey="score" 
-                    fill="#4f46e5" 
-                    radius={[0, 8, 8, 0]} 
-                    barSize={20}
+                    fill="#64748b" 
+                    radius={[0, 4, 4, 0]} 
+                    barSize={12}
                     isAnimationActive={false}
                   >
                     {deptPerformanceData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.score > IDC_TARGET ? '#10b981' : entry.score === IDC_TARGET ? '#f59e0b' : '#ef4444'} />
+                      <Cell key={`cell-${index}`} fill={entry.score > IDC_TARGET ? '#8DA399' : entry.score === IDC_TARGET ? '#D4B483' : '#C57B67'} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -643,33 +698,76 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
           </div>
           </div>
 
-          {/* Tenure Breakdown */}
-          <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40">
-            <h3 className="text-lg font-black text-slate-900 mb-8 flex items-center gap-3">
-              <Clock className="h-5 w-5 text-indigo-600" />
-              IDCO por Tempo de Casa
+          {/* Upcoming Events Panel */}
+          <div className="rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+            <h3 className="text-lg font-normal tracking-wide text-slate-800 uppercase mb-8 flex items-center gap-3">
+              <Calendar className="h-4 w-4 text-slate-400" />
+              Próximos Prazos
             </h3>
-            <div className="space-y-8">
-              {idcoByTenure.map((item, i) => (
-                <div key={i} className="space-y-3">
-                  <div className="flex justify-between items-end">
-                    <div className="flex flex-col">
-                      <span className="text-xs font-black text-slate-700 uppercase tracking-widest">{item.group}</span>
-                      <span className="text-[10px] font-bold text-slate-400 mt-1">{item.count} consolidados</span>
-                    </div>
-                    <div className="flex items-baseline gap-1">
-                      <span className={`text-2xl font-black tracking-tight ${item.avgScore >= IDC_TARGET ? 'text-emerald-600' : item.avgScore >= 50 ? 'text-indigo-600' : 'text-rose-600'}`}>
-                        {item.avgScore}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400">pts</span>
+            <div className="space-y-3">
+              {upcomingEvents.length > 0 ? (
+                upcomingEvents.map((event) => (
+                  <div key={event.id} className="p-4 rounded-lg border border-slate-100 bg-slate-50/30 hover:bg-slate-50 transition-all group">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-normal text-slate-700 group-hover:text-slate-900 transition-colors truncate">{event.title}</h4>
+                        <p className="text-[10px] font-light text-slate-400 mt-1 flex items-center gap-1">
+                          <Clock className="h-2.5 w-2.5" />
+                          {new Date(event.startDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                      </div>
+                      <div className={`px-2 py-0.5 rounded-md text-[8px] font-medium uppercase tracking-wider border ${
+                        event.type === 'Deadline' ? 'bg-[#F9F4F2] text-[#C57B67] border-[#EFE2DE]' :
+                        event.type === 'Meeting' ? 'bg-[#F1F5F3] text-[#8DA399] border-[#E2E8E5]' :
+                        'bg-slate-50 text-slate-400 border-slate-100'
+                      }`}>
+                        {event.type}
+                      </div>
                     </div>
                   </div>
-                  <div className="h-3 w-full bg-slate-50 rounded-full overflow-hidden p-0.5 border border-slate-100">
+                ))
+              ) : (
+                <div className="py-6 text-center text-slate-300">
+                  <p className="text-xs font-normal">Nenhum evento próximo</p>
+                </div>
+              )}
+              <Button 
+                variant="outline" 
+                className="w-full !h-9 !rounded-lg text-[10px] font-normal tracking-wide border-slate-200 mt-2"
+                onClick={() => {}}
+              >
+                Ver Calendário Completo
+              </Button>
+            </div>
+          </div>
+
+          {/* Tenure Breakdown */}
+          <div className="rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+            <h3 className="text-lg font-normal tracking-wide text-slate-800 uppercase mb-8 flex items-center gap-3">
+              <Clock className="h-4 w-4 text-slate-400" />
+              Performance por Tempo
+            </h3>
+            <div className="space-y-6">
+              {idcoByTenure.map((item, i) => (
+                <div key={i} className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{item.group}</span>
+                      <span className="text-[9px] font-light text-slate-400 mt-0.5">{item.count} consolidados</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span className={`text-xl font-normal tracking-tight ${item.avgScore >= IDC_TARGET ? 'text-[#8DA399]' : item.avgScore >= 50 ? 'text-slate-600' : 'text-[#C57B67]'}`}>
+                        {item.avgScore}
+                      </span>
+                      <span className="text-[9px] font-light text-slate-400">pts</span>
+                    </div>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100">
                     <motion.div 
                       initial={{ width: 0 }}
                       animate={{ width: `${item.avgScore}%` }}
-                      transition={{ duration: 1, delay: i * 0.1 }}
-                      className={`h-full rounded-full shadow-sm ${item.avgScore >= IDC_TARGET ? 'bg-emerald-500' : item.avgScore >= 50 ? 'bg-indigo-500' : 'bg-rose-500'}`}
+                      transition={{ duration: 1, delay: i * 0.05 }}
+                      className={`h-full rounded-full ${item.avgScore >= IDC_TARGET ? 'bg-[#8DA399]' : item.avgScore >= 50 ? 'bg-slate-400' : 'bg-[#C57B67]'}`}
                     />
                   </div>
                 </div>
@@ -678,18 +776,18 @@ export const Dashboard = ({ kpis, users, consolidations, areas: propAreas, teams
           </div>
 
           {/* Recent Activity */}
-          <div className="rounded-[2.5rem] border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/40">
-            <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-8">Atividades Recentes</h4>
-            <div className="space-y-6">
+          <div className="rounded-xl border border-slate-200/60 bg-white p-8 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
+            <h4 className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-8">Atividades Recentes</h4>
+            <div className="space-y-5">
               {consolidations.slice(-4).reverse().map((c, i) => (
                 <div key={c.id} className="flex items-start gap-4 relative">
-                  {i < 3 && <div className="absolute left-5 top-10 bottom-0 w-0.5 bg-slate-100" />}
-                  <div className="h-10 w-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm z-10">
-                    <CheckCircle2 className="h-5 w-5" />
+                  {i < 3 && <div className="absolute left-4 top-8 bottom-0 w-[1px] bg-slate-100" />}
+                  <div className="h-8 w-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 border border-slate-100 z-10">
+                    <CheckCircle2 className="h-4 w-4 stroke-[1.5]" />
                   </div>
-                  <div className="flex-1 min-w-0 pt-1">
-                    <p className="text-sm font-black text-slate-900 truncate">{c.collaboratorName}</p>
-                    <p className="text-xs font-bold text-slate-400 mt-0.5">Consolidado em {c.month}</p>
+                  <div className="flex-1 min-w-0 pt-0.5">
+                    <p className="text-xs font-normal text-slate-700 truncate">{c.collaboratorName}</p>
+                    <p className="text-[10px] font-light text-slate-400 mt-0.5">Consolidado em {c.month}</p>
                   </div>
                 </div>
               ))}
